@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ashen Crown RTS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      html, body { margin: 0; padding: 0; background: #050607; overflow: hidden; height: 100%; font-family: system-ui, sans-serif; color: #eee; }
+      #game { width: 100vw; height: 100vh; position: relative; z-index: 1; }
+      canvas { display: block; }
+      #menu-video {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        object-fit: cover;
+        z-index: 0;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.8s ease;
+      }
+      #menu-video.visible { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <video id="menu-video" autoplay muted loop playsinline></video>
+    <div id="game"></div>
+
+    <div id="menu-layer" style="display: none;">
+      <div id="menu-vignette"></div>
+      <div id="menu-card">
+        <div id="menu-brand">
+          <div id="menu-title">Ashen Crown</div>
+          <div id="menu-subtitle">стройте · разведывайте · осаждайте</div>
+        </div>
+
+        <div class="menu-section">
+          <div class="menu-section-label">Фракция</div>
+          <div class="menu-race-row">
+            <button class="menu-race" data-race="alliance">
+              <div class="menu-race-name">Alliance</div>
+              <div class="menu-race-tag">сталь · башни · дисциплина</div>
+            </button>
+            <button class="menu-race" data-race="horde">
+              <div class="menu-race-name">Horde</div>
+              <div class="menu-race-tag">кровь · костры · натиск</div>
+            </button>
+          </div>
+        </div>
+
+        <div class="menu-section">
+          <div class="menu-section-label">Сложность</div>
+          <div class="menu-diff-row">
+            <button class="menu-diff" data-diff="easy">Easy</button>
+            <button class="menu-diff active" data-diff="normal">Normal</button>
+            <button class="menu-diff" data-diff="hard">Hard</button>
+          </div>
+        </div>
+
+        <div class="menu-hints">
+          <div>ЛКМ — выбор · Shift+ЛКМ — добавить · двойной ЛКМ — все на экране</div>
+          <div>ПКМ — движение/атака/сбор · Ctrl+1..9 — группа · 1..9 — выбрать</div>
+          <div>Q — атака-движение · X — стоп · H — к ратуше · B — строить · R — restart · M — mute</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="ui-layer" style="display: none;">
+      <div id="top-bar" class="glass-panel">
+        <div class="resource-group">
+          <div class="res-gold" id="ui-gold">Золото: 0</div>
+          <div class="res-lumber" id="ui-lumber">Дерево: 0</div>
+          <div class="res-food" id="ui-food">Лимит: 0/0</div>
+        </div>
+        <div class="status-text" id="ui-mode-text"></div>
+        <div class="help-text" id="ui-help-text">R рестарт  M звук</div>
+      </div>
+      
+      <div id="bottom-panel" class="glass-panel" style="display: none;">
+        <div class="selection-info">
+          <h2 class="selection-title" id="ui-sel-title">Title</h2>
+          <div class="selection-stats" id="ui-sel-stats">Stats</div>
+          <div class="selection-summary" id="ui-sel-summary">Summary</div>
+          <div id="ui-sel-progress-container" class="progress-container" style="display: none;">
+            <div id="ui-sel-progress-fill" class="progress-fill"></div>
+          </div>
+        </div>
+        <div class="command-actions" id="ui-actions">
+          <!-- buttons go here -->
+        </div>
+      </div>
+
+      <div id="minimap-border" class="glass-panel">
+        <canvas id="minimap-canvas" width="160" height="160"></canvas>
+      </div>
+
+      <div id="center-message">Недостаточно ресурсов</div>
+    </div>
+    
+    <div id="game-over-screen">
+      <div id="game-over-title">ПОБЕДА</div>
+      <button class="btn-primary" id="btn-restart">Меню</button>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
