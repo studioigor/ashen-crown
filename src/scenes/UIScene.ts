@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import {
   VIEW_W, VIEW_H, COLORS, MAP_W, MAP_H, WORLD_W, WORLD_H,
-  UNIT, BUILDING, Side, SIDE, BuildingKind, UnitKind, RACE_COLOR, RACE_LABEL, Difficulty, DIFFICULTY
+  UNIT, BUILDING, Side, SIDE, BuildingKind, UnitKind, RACE_COLOR, RACE_LABEL, DIFFICULTY,
+  STORY_MAP_LABEL, type GameLaunchConfig
 } from '../config';
 import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
@@ -11,7 +12,7 @@ import { GameScene } from './GameScene';
 
 interface UIInit {
   playerSide: Side;
-  difficulty?: Difficulty;
+  launchConfig: GameLaunchConfig;
 }
 
 type HoverEntity = Unit | Building | ResourceNode;
@@ -37,7 +38,9 @@ interface TooltipModel {
 export class UIScene extends Phaser.Scene {
   private game_!: GameScene;
   private playerSide: Side = SIDE.player;
-  private difficulty: Difficulty = 'normal';
+  private launchConfig: GameLaunchConfig = { mode: 'skirmish', playerRace: 'alliance', difficulty: 'normal' };
+  private baseModeText = '';
+  private modeOverrideText = '';
 
   private buildMenuOpen = false;
   private lastPanelUpdate = 0;
@@ -80,14 +83,19 @@ export class UIScene extends Phaser.Scene {
   };
   private onFlash = (m: string): void => this.showMessage(m);
   private onGameOver = (win: boolean): void => this.showGameOver(win);
-  private onMode = (m: string): void => { this.elModeText.innerText = m; };
+  private onMode = (m: string): void => {
+    this.modeOverrideText = m;
+    this.renderModeText();
+  };
   private onEntityHover = (payload: EntityHoverPayload): void => this.showEntityTooltip(payload);
 
   constructor() { super('UIScene'); }
 
   init(data: UIInit): void {
     this.playerSide = data.playerSide ?? SIDE.player;
-    this.difficulty = data.difficulty ?? 'normal';
+    this.launchConfig = data.launchConfig ?? this.launchConfig;
+    this.baseModeText = modeStatusLabel(this.launchConfig);
+    this.modeOverrideText = '';
   }
 
   create(): void {
@@ -115,7 +123,7 @@ export class UIScene extends Phaser.Scene {
 
     this.renderResources();
     this.renderCommandPanel();
-    this.elModeText.innerText = '';
+    this.renderModeText();
     this.elUiLayer.style.display = 'flex';
     this.elGameOver.classList.remove('visible');
 
@@ -136,7 +144,12 @@ export class UIScene extends Phaser.Scene {
       this.elGold.innerText = 'Золото: 0';
       this.elLumber.innerText = 'Дерево: 0';
       this.elFood.innerText = 'Лимит: 0/0';
+      this.elModeText.innerText = '';
     });
+  }
+
+  private renderModeText(): void {
+    this.elModeText.innerText = this.modeOverrideText || this.baseModeText;
   }
 
   private onMinimapClick = (e: MouseEvent): void => {
@@ -363,7 +376,7 @@ export class UIScene extends Phaser.Scene {
     btn.innerHTML = `${iconHtml}<span class="cmd-copy"><span class="cmd-label">${escapeHtml(label)}</span>${extraHtml}</span>`;
     btn.onclick = onClick;
     btn.onmouseenter = () => { this.elModeText.innerText = tooltip; };
-    btn.onmouseleave = () => { this.elModeText.innerText = ''; };
+    btn.onmouseleave = () => { this.renderModeText(); };
     this.elActions.appendChild(btn);
   }
 
@@ -702,4 +715,9 @@ function escapeHtml(value: string): string {
     '"': '&quot;',
     "'": '&#39;'
   }[ch]!));
+}
+
+function modeStatusLabel(config: GameLaunchConfig): string {
+  if (config.mode === 'story') return `Story Map · ${STORY_MAP_LABEL[config.storyMapId]}`;
+  return `1v1 Skirmish · ${DIFFICULTY[config.difficulty].label}`;
 }

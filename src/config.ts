@@ -36,6 +36,36 @@ export const COLORS = {
 
 export type Race = 'alliance' | 'horde';
 export type Difficulty = 'easy' | 'normal' | 'hard';
+export type GameMode = 'skirmish' | 'story';
+export type StoryMapId = 'the-ashen-crown';
+
+export interface SkirmishLaunchConfig {
+  mode: 'skirmish';
+  playerRace: Race;
+  difficulty: Difficulty;
+  seed?: number;
+}
+
+export interface StoryLaunchConfig {
+  mode: 'story';
+  playerRace: Race;
+  difficulty: Difficulty;
+  storyMapId: StoryMapId;
+  seed?: number;
+}
+
+export type GameLaunchConfig = SkirmishLaunchConfig | StoryLaunchConfig;
+
+export const STORY_MAP_LABEL: Record<StoryMapId, string> = {
+  'the-ashen-crown': 'The Ashen Crown'
+};
+
+export const STORY_MODE_DEFAULTS = {
+  mode: 'story',
+  playerRace: 'alliance',
+  difficulty: 'normal',
+  storyMapId: 'the-ashen-crown'
+} as const satisfies StoryLaunchConfig;
 
 export const DIFFICULTY = {
   easy: { label: 'Easy', aiDelayMs: 1200, attackScore: 7, targetWorkers: 7, incomeBias: 0.95 },

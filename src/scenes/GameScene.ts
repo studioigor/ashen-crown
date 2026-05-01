@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import {
   TILE, WORLD_W, WORLD_H, VIEW_W, VIEW_H,
   CAMERA_SPEED, EDGE_SCROLL_PX,
-  Side, SIDE, Race, Difficulty, DIFFICULTY, COLORS, RACE_COLOR,
+  Side, SIDE, Race, Difficulty, GameMode, StoryMapId, GameLaunchConfig, DIFFICULTY, COLORS, RACE_COLOR,
   UNIT, BUILDING, UnitKind, BuildingKind,
   RESOURCE, FOG, FEEL, VISUALS
 } from '../config';
@@ -27,11 +27,7 @@ import {
   getBuildingStageFrame
 } from '../assets/artManifest';
 
-export interface GameInit {
-  playerRace: Race;
-  difficulty?: Difficulty;
-  seed?: number;
-}
+export type GameInit = GameLaunchConfig;
 
 export class GameScene extends Phaser.Scene {
   map!: TileMap;
@@ -46,10 +42,13 @@ export class GameScene extends Phaser.Scene {
   fog!: FogOfWar;
   effects!: EffectsSystem;
   audio!: AudioSystem;
+  mode: GameMode = 'skirmish';
   playerRace: Race = 'alliance';
   aiRace: Race = 'horde';
   difficulty: Difficulty = 'normal';
+  storyMapId: StoryMapId | null = null;
   seed = 42;
+  launchConfig: GameLaunchConfig = { mode: 'skirmish', playerRace: 'alliance', difficulty: 'normal' };
   aiState: AIState = { phase: 'economy', nextCheckMs: 0, armyTargetScore: 9, regroupUntilMs: 0, lastPressureMs: 0 };
 
   private tileLayer!: Phaser.GameObjects.Container;
@@ -90,10 +89,14 @@ export class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   init(data: GameInit): void {
-    this.playerRace = data.playerRace ?? 'alliance';
+    const config = this.normalizeLaunchConfig(data);
+    this.mode = config.mode;
+    this.playerRace = config.playerRace;
     this.aiRace = this.playerRace === 'alliance' ? 'horde' : 'alliance';
-    this.difficulty = data.difficulty ?? 'normal';
-    this.seed = data.seed ?? Math.floor(Math.random() * 100000);
+    this.difficulty = config.difficulty;
+    this.storyMapId = config.mode === 'story' ? config.storyMapId : null;
+    this.seed = config.seed ?? Math.floor(Math.random() * 100000);
+    this.launchConfig = { ...config, seed: this.seed };
     this.units = []; this.buildings = []; this.resources = [];
     this.projectiles = []; this.selected = []; this.selectedBuilding = null;
     this.selectionRings = []; this.buildingSelectionRing = null;
@@ -110,6 +113,24 @@ export class GameScene extends Phaser.Scene {
       lastPressureMs: 0
     };
     this.economy = new Economy();
+  }
+
+  private normalizeLaunchConfig(data: GameInit): GameLaunchConfig {
+    if (data?.mode === 'story') {
+      return {
+        mode: 'story',
+        playerRace: data.playerRace,
+        difficulty: data.difficulty,
+        storyMapId: data.storyMapId,
+        seed: data.seed
+      };
+    }
+    return {
+      mode: 'skirmish',
+      playerRace: data?.playerRace ?? 'alliance',
+      difficulty: data?.difficulty ?? 'normal',
+      seed: data?.seed
+    };
   }
 
   create(): void {
@@ -147,7 +168,7 @@ export class GameScene extends Phaser.Scene {
 
     this.setupInput();
 
-    this.scene.launch('UIScene', { playerSide: SIDE.player, difficulty: this.difficulty });
+    this.scene.launch('UIScene', { playerSide: SIDE.player, launchConfig: this.launchConfig });
 
     // Ambient audio starts once user has interacted (audioctx resumes on first sound)
     this.input.once('pointerdown', () => this.audio.startAmbient());
@@ -660,7 +681,7 @@ export class GameScene extends Phaser.Scene {
 
   private restartGame(): void {
     this.scene.stop('UIScene');
-    this.scene.restart({ playerRace: this.playerRace, difficulty: this.difficulty, seed: Math.floor(Math.random() * 100000) });
+    this.scene.restart({ ...this.launchConfig, seed: Math.floor(Math.random() * 100000) });
   }
 
   private setAttackMoveMode(v: boolean): void {
