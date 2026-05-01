@@ -1315,6 +1315,7 @@ export class GameScene extends Phaser.Scene {
       u.hb.setVisible(visible);
     }
     for (const b of this.buildings) {
+      if (!b.alive) continue;
       const c = b.centerTile();
       const explored = b.side === SIDE.player || this.fog.isExplored(c.tx, c.ty);
       const visible = b.side === SIDE.player || this.fog.isVisible(c.tx, c.ty);
@@ -1322,6 +1323,7 @@ export class GameScene extends Phaser.Scene {
       b.hb.setVisible(visible);
     }
     for (const r of this.resources) {
+      if (!r.alive) continue;
       const { tx, ty } = this.map.worldToTile(r.x, r.y);
       const explored = this.fog.isExplored(tx, ty);
       r.sprite.setVisible(explored);

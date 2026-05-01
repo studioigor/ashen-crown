@@ -79,22 +79,16 @@ export class Building implements IEntity {
     const cy = ty * TILE + (this.sizeTiles * TILE) / 2;
 
     this.currentStage = instant ? 'final' : 'stage1';
-    const initialTexture = this.stageTexture(scene, 'stage1');
+    const initialTexture = this.stageTexture(scene, this.currentStage);
     this.sprite = scene.add.sprite(cx, cy, initialTexture.key, initialTexture.frame);
     this.applyArtDisplaySize(scene);
-    if (instant) this.setStageTexture('final');
     this.sprite.setDepth(20);
     this.sprite.setData('entity', this);
     this.radius = (this.sizeTiles * TILE) / 2;
 
-    const damageKey = scene.textures.exists(buildingDamageKey(kind, race))
-      ? buildingDamageKey(kind, race)
-      : `building_${kind}_${race}_damaged`;
+    const damageKey = this.damageTextureKey(scene, false) ?? `building_${kind}_${race}_damaged`;
     this.damageOverlay = scene.add.image(cx, cy, damageKey);
-    if (buildingArtReady(scene, kind, race)) {
-      const display = BUILDING_ART_DISPLAY[kind];
-      this.damageOverlay.setDisplaySize(display.width, display.height);
-    }
+    this.applyDamageDisplaySize(scene);
     this.damageOverlay.setDepth(21);
     this.damageOverlay.setAlpha(0);
     this.damageOverlay.setBlendMode(Phaser.BlendModes.MULTIPLY);
@@ -144,6 +138,49 @@ export class Building implements IEntity {
     this.sprite.setDisplaySize(display.width, display.height);
   }
 
+  private applyDamageDisplaySize(scene: Phaser.Scene): void {
+    if (!buildingArtReady(scene, this.buildingKind, this.race)) return;
+    const display = BUILDING_ART_DISPLAY[this.buildingKind];
+    this.damageOverlay.setDisplaySize(display.width, display.height);
+  }
+
+  private damageTextureKey(scene: Phaser.Scene, heavy: boolean): string | null {
+    const artHeavyKey = buildingDestructionKey(this.buildingKind, this.race);
+    const artLightKey = buildingDamageKey(this.buildingKind, this.race);
+    const legacyLightKey = `building_${this.buildingKind}_${this.race}_damaged`;
+    if (heavy && scene.textures.exists(artHeavyKey)) return artHeavyKey;
+    if (scene.textures.exists(artLightKey)) return artLightKey;
+    if (scene.textures.exists(legacyLightKey)) return legacyLightKey;
+    return null;
+  }
+
+  private updateDamageOverlay(): void {
+    const hpFrac = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
+    if (hpFrac >= 0.75) {
+      this.damageOverlay.setAlpha(0);
+      return;
+    }
+
+    const scene = this.sprite.scene;
+    const desiredDamageKey = this.damageTextureKey(scene, hpFrac < 0.35);
+    if (desiredDamageKey && this.damageOverlay.texture.key !== desiredDamageKey) {
+      this.damageOverlay.setTexture(desiredDamageKey);
+      this.applyDamageDisplaySize(scene);
+    }
+    this.damageOverlay.setAlpha(Phaser.Math.Clamp((0.75 - hpFrac) * 1.4, 0, 0.9));
+  }
+
+  private stopEmitters(): void {
+    if (this.chimneySmoke) {
+      this.chimneySmoke.stop();
+      this.chimneySmoke = null;
+    }
+    if (this.constructionDust) {
+      this.constructionDust.stop();
+      this.constructionDust = null;
+    }
+  }
+
   private maybeStartChimney(): void {
     if (this.chimneySmoke) return;
     // Only buildings with chimneys/fires
@@ -160,7 +197,7 @@ export class Building implements IEntity {
 
   private drawFlag(phase: number): void {
     this.flag.clear();
-    if (!this.completed && this.currentStage !== 'final') return;
+    if (!this.completed) return;
     const color = RACE_COLOR[this.race];
     const x = this.sprite.x + this.radius - 6;
     const y = this.sprite.y - this.radius + 2;
@@ -222,37 +259,40 @@ export class Building implements IEntity {
     this.buildProgress += ms;
     const ratio = Phaser.Math.Clamp(this.buildProgress / this.buildTotal, 0, 1);
     this.hp = Math.max(1, Math.floor(this.maxHp * (0.1 + 0.9 * ratio)));
-
-    // Update stage based on progress
-    const nextStage: Stage = ratio < 0.34 ? 'stage1' : ratio < 0.68 ? 'stage2' : 'final';
-    if (nextStage !== this.currentStage) {
-      this.currentStage = nextStage;
-      const scene = this.sprite.scene;
-      scene.tweens.add({
-        targets: this.sprite,
-        alpha: { from: 1, to: 0.3 },
-        duration: 120,
-        yoyo: true,
-        onYoyo: () => this.setStageTexture(nextStage)
-      });
-    }
-    this.hb.update();
+    this.updateDamageOverlay();
 
     if (this.buildProgress >= this.buildTotal) {
       this.completed = true;
       this.hp = this.maxHp;
       this.currentStage = 'final';
+      this.sprite.scene.tweens.killTweensOf(this.sprite);
       this.setStageTexture('final');
       this.sprite.setAlpha(1);
-      // Stop construction dust
-      if (this.constructionDust) {
-        this.constructionDust.stop();
-        this.constructionDust = null;
-      }
+      this.updateDamageOverlay();
+      this.stopEmitters();
       this.maybeStartChimney();
+      this.drawFlag(this.flagPhase);
       this.hb.update();
       return true;
     }
+
+    const nextStage: Stage = ratio < 0.5 ? 'stage1' : 'stage2';
+    if (nextStage !== this.currentStage) {
+      this.currentStage = nextStage;
+      const scene = this.sprite.scene;
+      scene.tweens.killTweensOf(this.sprite);
+      this.sprite.setAlpha(1);
+      scene.tweens.add({
+        targets: this.sprite,
+        alpha: { from: 1, to: 0.3 },
+        duration: 120,
+        yoyo: true,
+        onYoyo: () => {
+          if (!this.completed && this.currentStage === nextStage) this.setStageTexture(nextStage);
+        }
+      });
+    }
+    this.hb.update();
     return false;
   }
 
@@ -284,24 +324,7 @@ export class Building implements IEntity {
   takeDamage(n: number): void {
     if (!this.alive) return;
     this.hp -= n;
-    // Update damage overlay intensity based on HP
-    const hpFrac = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
-    if (hpFrac < 0.75) {
-      const dmgAlpha = Phaser.Math.Clamp((0.75 - hpFrac) * 1.4, 0, 0.9);
-      const lightDamageKey = buildingDamageKey(this.buildingKind, this.race);
-      const heavyDamageKey = buildingDestructionKey(this.buildingKind, this.race);
-      const desiredDamageKey = hpFrac < 0.35 && this.sprite.scene.textures.exists(heavyDamageKey) ? heavyDamageKey : lightDamageKey;
-      if (this.sprite.scene.textures.exists(desiredDamageKey) && this.damageOverlay.texture.key !== desiredDamageKey) {
-        this.damageOverlay.setTexture(desiredDamageKey);
-        if (buildingArtReady(this.sprite.scene, this.buildingKind, this.race)) {
-          const display = BUILDING_ART_DISPLAY[this.buildingKind];
-          this.damageOverlay.setDisplaySize(display.width, display.height);
-        }
-      }
-      this.damageOverlay.setAlpha(dmgAlpha);
-    } else {
-      this.damageOverlay.setAlpha(0);
-    }
+    this.updateDamageOverlay();
     this.hb.update();
     if (this.hp <= 0) this.destroy();
   }
@@ -310,6 +333,8 @@ export class Building implements IEntity {
     if (!this.alive) return;
     this.alive = false;
     const scene = this.sprite.scene;
+    scene.tweens.killTweensOf(this.sprite);
+    scene.tweens.killTweensOf(this.damageOverlay);
     if (buildingArtReady(scene, this.buildingKind, this.race)) {
       this.damageOverlay.setAlpha(0);
       this.setStageTexture('destroying');
@@ -331,8 +356,7 @@ export class Building implements IEntity {
       });
       this.flag.destroy();
       this.productionGlow.destroy();
-      if (this.chimneySmoke) { this.chimneySmoke.stop(); this.chimneySmoke = null; }
-      if (this.constructionDust) { this.constructionDust.stop(); this.constructionDust = null; }
+      this.stopEmitters();
       this.hb.destroy();
       return;
     }
@@ -359,8 +383,7 @@ export class Building implements IEntity {
     });
     this.flag.destroy();
     this.productionGlow.destroy();
-    if (this.chimneySmoke) { this.chimneySmoke.stop(); this.chimneySmoke = null; }
-    if (this.constructionDust) { this.constructionDust.stop(); this.constructionDust = null; }
+    this.stopEmitters();
     this.hb.destroy();
   }
 

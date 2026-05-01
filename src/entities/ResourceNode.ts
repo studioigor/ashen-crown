@@ -21,6 +21,7 @@ export class ResourceNode implements IEntity {
   tx: number;
   ty: number;
   hb: HealthBar;
+  private logDecal: Phaser.GameObjects.Image | null = null;
 
   constructor(scene: Phaser.Scene, tx: number, ty: number, type: ResourceType) {
     this.resourceType = type;
@@ -89,37 +90,58 @@ export class ResourceNode implements IEntity {
     }
   }
 
+  private fadeOut(scene: Phaser.Scene, targets: Phaser.GameObjects.GameObject | Phaser.GameObjects.GameObject[], delay: number, duration: number): void {
+    scene.tweens.add({
+      targets,
+      alpha: 0,
+      duration,
+      delay,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        for (const target of Array.isArray(targets) ? targets : [targets]) target.destroy();
+      }
+    });
+  }
+
+  private addTreeLogDecal(scene: Phaser.Scene): Phaser.GameObjects.Image | null {
+    if (!scene.textures.exists('tree_log')) return null;
+    const decal = scene.add.image(this.sprite.x + TILE * 0.18, this.sprite.y + TILE * 0.2, 'tree_log');
+    decal.setDepth(this.sprite.depth + 0.01);
+    decal.setRotation(-0.12);
+    decal.setData('entity', null);
+    return decal;
+  }
+
   destroy(): void {
     if (!this.alive) return;
     this.alive = false;
     this.hb.destroy();
     const scene = this.sprite.scene;
+    scene.tweens.killTweensOf(this.sprite);
     if (this.resourceType === 'gold' && scene.textures.exists('goldmine_depleted')) {
       this.sprite.setTexture('goldmine_depleted');
       this.sprite.setData('entity', null);
-      scene.tweens.add({
-        targets: this.sprite,
-        alpha: 0,
-        duration: 900,
-        delay: 6500,
-        ease: 'Cubic.easeIn',
-        onComplete: () => this.sprite.destroy()
-      });
+      this.sprite.setAlpha(1);
+      this.fadeOut(scene, this.sprite, 6500, 900);
       return;
     }
     if (this.resourceType === 'lumber' && scene.textures.exists('tree_stump')) {
       this.sprite.setTexture('tree_stump');
       this.sprite.setOrigin(0.5, 0.8);
+      this.sprite.setRotation(0);
+      this.sprite.setAlpha(1);
       this.sprite.setData('entity', null);
-      scene.tweens.add({
-        targets: this.sprite,
-        alpha: 0,
-        duration: 700,
-        delay: 4500,
-        ease: 'Cubic.easeIn',
-        onComplete: () => this.sprite.destroy()
-      });
+      this.logDecal = this.addTreeLogDecal(scene);
+      this.fadeOut(scene, this.logDecal ? [this.sprite, this.logDecal] : this.sprite, 4500, 700);
       return;
+    }
+    if (this.resourceType === 'lumber') {
+      this.logDecal = this.addTreeLogDecal(scene);
+      if (this.logDecal) {
+        this.sprite.destroy();
+        this.fadeOut(scene, this.logDecal, 4500, 700);
+        return;
+      }
     }
     this.sprite.destroy();
   }
