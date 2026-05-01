@@ -4,7 +4,7 @@ import {
   CAMERA_SPEED, EDGE_SCROLL_PX,
   Side, SIDE, Race, Difficulty, GameMode, StoryMapId, GameLaunchConfig, DIFFICULTY, COLORS, RACE_COLOR,
   UNIT, BUILDING, UnitKind, BuildingKind,
-  RESOURCE, FOG, FEEL, VISUALS
+  RESOURCE, CARAVAN_CONFIG, FOG, FEEL, VISUALS
 } from '../config';
 import { TileMap, TileType } from '../world/TileMap';
 import { generateMap, MapLayout } from '../world/MapGenerator';
@@ -12,6 +12,7 @@ import { FogOfWar } from '../world/FogOfWar';
 import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
 import { ResourceNode } from '../entities/ResourceNode';
+import { Caravan } from '../entities/Caravan';
 import { IEntity } from '../entities/Entity';
 import { findPath } from '../systems/Pathfinding';
 import { Economy } from '../systems/Economy';
@@ -35,6 +36,7 @@ export class GameScene extends Phaser.Scene {
   units: Unit[] = [];
   buildings: Building[] = [];
   resources: ResourceNode[] = [];
+  caravans: Caravan[] = [];
   projectiles: Projectile[] = [];
   selected: Unit[] = [];
   selectedBuilding: Building | null = null;
@@ -79,6 +81,9 @@ export class GameScene extends Phaser.Scene {
   private lastCursorCheckMs = 0;
   private lastHoverCheckMs = 0;
   private hoveredEntity: IEntity | null = null;
+  private caravanNextSpawnMs = Infinity;
+  private caravanRouteFlip = false;
+  private debugCaravans = false;
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -97,7 +102,7 @@ export class GameScene extends Phaser.Scene {
     this.storyMapId = config.mode === 'story' ? config.storyMapId : null;
     this.seed = config.seed ?? Math.floor(Math.random() * 100000);
     this.launchConfig = { ...config, seed: this.seed };
-    this.units = []; this.buildings = []; this.resources = [];
+    this.units = []; this.buildings = []; this.resources = []; this.caravans = [];
     this.projectiles = []; this.selected = []; this.selectedBuilding = null;
     this.selectionRings = []; this.buildingSelectionRing = null;
     this.placementKind = null; this.placementGhost = null;
@@ -105,6 +110,9 @@ export class GameScene extends Phaser.Scene {
     this.controlGroups = {}; this.gameOver = false;
     this.lastUnderAttackMs = -9999;
     this.lastClick = null;
+    this.caravanNextSpawnMs = Infinity;
+    this.caravanRouteFlip = false;
+    this.debugCaravans = false;
     this.aiState = {
       phase: 'economy',
       nextCheckMs: 0,
@@ -149,6 +157,8 @@ export class GameScene extends Phaser.Scene {
 
     this.drawTiles();
     this.spawnInitial();
+    this.debugCaravans = this.isDebugCaravansEnabled();
+    this.scheduleNextCaravan(true);
 
     this.fog = new FogOfWar(this, this.map);
     this.initialReveal();
@@ -280,6 +290,49 @@ export class GameScene extends Phaser.Scene {
     for (const t of this.layout.trees) this.resources.push(new ResourceNode(this, t.tx, t.ty, 'lumber'));
   }
 
+  private isDebugCaravansEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('debugCaravans') === '1';
+  }
+
+  private caravanSpawnsEnabled(): boolean {
+    if (this.mode === 'skirmish') return CARAVAN_CONFIG.enabledInSkirmish;
+    return CARAVAN_CONFIG.enabledInStory;
+  }
+
+  private scheduleNextCaravan(first = false): void {
+    if (!this.caravanSpawnsEnabled()) {
+      this.caravanNextSpawnMs = Infinity;
+      return;
+    }
+    const range = this.debugCaravans
+      ? CARAVAN_CONFIG.debugSpawnMs
+      : first
+        ? CARAVAN_CONFIG.firstSpawnMs
+        : CARAVAN_CONFIG.repeatSpawnMs;
+    this.caravanNextSpawnMs = this.time.now + Phaser.Math.Between(range.min, range.max);
+  }
+
+  private spawnCaravan(): Caravan {
+    const caravan = new Caravan(this, this.createCaravanRoute());
+    this.caravans.push(caravan);
+    this.effects.fx.dustPuff(caravan.x, caravan.y + caravan.radius * 0.45, true);
+    caravan.setVisible(this.isVisibleEntity(caravan));
+    return caravan;
+  }
+
+  private createCaravanRoute(): { x: number; y: number }[] {
+    const lower = { x: 10 * TILE + TILE / 2, y: WORLD_H - 13 * TILE + TILE / 2 };
+    const center = { x: WORLD_W / 2, y: WORLD_H / 2 };
+    const upper = { x: WORLD_W - 12 * TILE + TILE / 2, y: 12 * TILE + TILE / 2 };
+    const margin = CARAVAN_CONFIG.radius * 3;
+    const fromLower = this.caravanRouteFlip;
+    this.caravanRouteFlip = !this.caravanRouteFlip;
+    return fromLower
+      ? [{ x: -margin, y: lower.y }, lower, center, upper, { x: WORLD_W + margin, y: upper.y }]
+      : [{ x: WORLD_W + margin, y: upper.y }, upper, center, lower, { x: -margin, y: lower.y }];
+  }
+
   spawnUnit(x: number, y: number, kind: UnitKind, side: Side, race: Race): Unit {
     const u = new Unit(this, x, y, kind, side, race);
     this.units.push(u);
@@ -385,6 +438,8 @@ export class GameScene extends Phaser.Scene {
       const hit = this.findEntityAt(p.worldX, p.worldY);
       if (hit) {
         if ((hit instanceof Unit || hit instanceof Building) && hit.side !== SIDE.player && hit.side !== SIDE.neutral) {
+          key = 'cursor_attack';
+        } else if (hit instanceof Caravan && this.selected.some(u => u.canAttack())) {
           key = 'cursor_attack';
         } else if (hit instanceof ResourceNode && this.selected.some(u => u.isWorker())) {
           key = 'cursor_gather';
@@ -531,6 +586,9 @@ export class GameScene extends Phaser.Scene {
     for (const u of this.units) {
       if (u.alive && u.sprite.visible && Phaser.Math.Distance.Between(x, y, u.x, u.y) <= u.radius + 5) return u;
     }
+    for (const c of this.caravans) {
+      if (c.alive && c.sprite.visible && Phaser.Math.Distance.Between(x, y, c.x, c.y) <= c.radius + 6) return c;
+    }
     for (const b of this.buildings) {
       if (b.alive && b.sprite.visible && Math.abs(x - b.x) <= b.radius && Math.abs(y - b.y) <= b.radius) return b;
     }
@@ -613,7 +671,11 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.selected.length === 0) return;
     const hit = this.findEntityAt(p.worldX, p.worldY);
-    if (hit instanceof Unit && hit.side !== SIDE.player) {
+    if (hit instanceof Caravan) {
+      for (const u of this.selected) this.orderAttack(u, hit);
+      this.effects.targetMarker(hit, 0xffaa44, 'Караван');
+      this.audio.play('attack');
+    } else if (hit instanceof Unit && hit.side !== SIDE.player && hit.side !== SIDE.neutral) {
       for (const u of this.selected) this.orderAttack(u, hit);
       this.effects.targetMarker(hit, 0xff4444, 'Атака');
       this.audio.play('attack');
@@ -701,11 +763,12 @@ export class GameScene extends Phaser.Scene {
     this.repath(u, x, y);
   }
 
-  orderAttack(u: Unit, target: Unit): void {
+  orderAttack(u: Unit, target: IEntity): void {
     if (!u.canAttack()) return;
     u.clearOrders();
     u.state = 'attack';
-    u.targetUnit = target;
+    if (target instanceof Building) u.targetBuilding = target;
+    else u.targetUnit = target;
   }
 
   orderAttackBuilding(u: Unit, target: Building): void {
@@ -854,6 +917,7 @@ export class GameScene extends Phaser.Scene {
     this.effects.ambientViewportTick(dt, this.cameras.main.worldView);
     this.updateUnits(dt);
     this.applySeparation(dt);
+    this.updateCaravans(dt);
     this.updateBuildings(dt);
     this.updateProjectiles(dt);
     this.updateSelectionRingsFollow();
@@ -1124,6 +1188,16 @@ export class GameScene extends Phaser.Scene {
     u.x = nx; u.y = ny;
   }
 
+  private updateCaravans(dt: number): void {
+    for (const caravan of this.caravans) {
+      if (caravan.alive) caravan.update(dt);
+    }
+    if (this.time.now < this.caravanNextSpawnMs) return;
+    if (this.caravans.filter(c => c.alive).length >= CARAVAN_CONFIG.maxActive) return;
+    this.spawnCaravan();
+    this.scheduleNextCaravan(false);
+  }
+
   private acquireTarget(u: Unit, range: number): IEntity | null {
     let best: IEntity | null = null;
     let bestD = Infinity;
@@ -1142,7 +1216,7 @@ export class GameScene extends Phaser.Scene {
 
   private assignAttackTarget(u: Unit, target: IEntity): void {
     u.state = 'attack';
-    u.targetUnit = target instanceof Unit ? target : null;
+    u.targetUnit = target instanceof Building ? null : target;
     u.targetBuilding = target instanceof Building ? target : null;
   }
 
@@ -1303,6 +1377,7 @@ export class GameScene extends Phaser.Scene {
     if (!target.alive || amount <= 0) return;
     const wasAlive = target.alive;
     const wasBuilding = target.kind === 'building';
+    const wasCaravan = target.kind === 'caravan';
     target.takeDamage(amount, from);
     if (show) {
       this.effects.hitFlash(target);
@@ -1315,6 +1390,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (from && target.side === SIDE.player && from.side === SIDE.ai) this.reportUnderAttack(target);
     if (wasAlive && !target.alive) {
+      if (wasCaravan) this.grantCaravanLoot(target as Caravan, from, show);
       if (show) {
         if (wasBuilding) {
           this.effects.buildingDestroyed(target.x, target.y, RACE_COLOR[(target as Building).race]);
@@ -1324,6 +1400,22 @@ export class GameScene extends Phaser.Scene {
         this.audio.play('death', 0.7, target.x);
       }
     }
+  }
+
+  private grantCaravanLoot(caravan: Caravan, from?: IEntity, show = true): void {
+    const side = from?.side;
+    if (side !== SIDE.player && side !== SIDE.ai) return;
+    const reward = CARAVAN_CONFIG.reward;
+    this.economy.deposit(side, 'gold', reward.gold);
+    this.economy.deposit(side, 'lumber', reward.lumber);
+    if (!show) return;
+    this.effects.resourceText(caravan.x, caravan.y - 4, `+${reward.gold}G`, 'gold');
+    this.effects.resourceText(caravan.x, caravan.y + 14, `+${reward.lumber}L`, 'lumber');
+    this.effects.fx.goldPop(caravan.x - 10, caravan.y - 10);
+    this.effects.fx.lumberChips(caravan.x + 12, caravan.y + 4);
+    this.effects.fx.debrisBurst(caravan.x, caravan.y + 8);
+    this.effects.fx.dustPuff(caravan.x, caravan.y + caravan.radius * 0.45, false);
+    if (side === SIDE.player) this.audio.play('deposit', 0.5, caravan.x);
   }
 
   private reportUnderAttack(target: IEntity): void {
@@ -1394,6 +1486,11 @@ export class GameScene extends Phaser.Scene {
       r.sprite.setVisible(explored);
       r.hb.setVisible(explored);
     }
+    for (const c of this.caravans) {
+      if (!c.alive) continue;
+      const { tx, ty } = this.map.worldToTile(c.x, c.y);
+      c.setVisible(this.fog.isVisible(tx, ty));
+    }
   }
 
   private isVisibleEntity(e: IEntity): boolean {
@@ -1433,6 +1530,15 @@ export class GameScene extends Phaser.Scene {
       this.selectionRings = this.selectionRings.filter(r => r.active);
 
       if (selectionChanged) this.game.events.emit('selection-changed', { units: this.selected, building: this.selectedBuilding });
+    }
+
+    const deadCaravans = this.caravans.filter(c => !c.alive);
+    if (deadCaravans.length > 0) {
+      const deadCaravanIds = new Set(deadCaravans.map(c => c.id));
+      this.caravans = this.caravans.filter(c => c.alive);
+      for (const u of this.units) {
+        if (u.targetUnit && deadCaravanIds.has(u.targetUnit.id)) u.targetUnit = null;
+      }
     }
 
     this.buildings = this.buildings.filter(b => {

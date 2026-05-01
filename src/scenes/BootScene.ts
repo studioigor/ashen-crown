@@ -3,10 +3,12 @@ import { TILE, COLORS, Race, RACE_COLOR, UNIT_KINDS, BUILDING_KINDS, UnitKind, B
 import {
   ART_RUNTIME_MANIFEST_KEY,
   ART_ASSETS,
+  FUTURE_UNIT_SHEET_ASSETS,
   UNIT_SHEET_ASSETS,
   type ArtAsset,
   type RuntimeArtManifest,
   artAssetUrl,
+  caravanAnimKey,
   resolveEnabledArtAssets,
   unitAnimKey
 } from '../assets/artManifest';
@@ -128,6 +130,23 @@ export class BootScene extends Phaser.Scene {
       for (let row = 0; row < sheet.framesPerFacing * 4; row += sheet.framesPerFacing) {
         const facing = ['south', 'east', 'north', 'west'][row / sheet.framesPerFacing] as 'south' | 'east' | 'north' | 'west';
         const key = unitAnimKey(sheet.unitKind, sheet.race, sheet.anim, facing);
+        if (this.anims.exists(key)) continue;
+        this.anims.create({
+          key,
+          frames: this.anims.generateFrameNumbers(sheet.key, {
+            start: row,
+            end: row + sheet.framesPerFacing - 1
+          }),
+          frameRate: sheet.fps,
+          repeat: sheet.repeat
+        });
+      }
+    }
+    for (const sheet of FUTURE_UNIT_SHEET_ASSETS) {
+      if (!loadedKeys.has(sheet.key)) continue;
+      for (let row = 0; row < sheet.framesPerFacing * 4; row += sheet.framesPerFacing) {
+        const facing = ['south', 'east', 'north', 'west'][row / sheet.framesPerFacing] as 'south' | 'east' | 'north' | 'west';
+        const key = caravanAnimKey(sheet.anim, facing);
         if (this.anims.exists(key)) continue;
         this.anims.create({
           key,

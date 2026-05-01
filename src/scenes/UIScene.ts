@@ -7,6 +7,7 @@ import {
 import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
 import { ResourceNode } from '../entities/ResourceNode';
+import { Caravan } from '../entities/Caravan';
 import { artAssetUrl } from '../assets/artManifest';
 import { GameScene } from './GameScene';
 
@@ -15,7 +16,7 @@ interface UIInit {
   launchConfig: GameLaunchConfig;
 }
 
-type HoverEntity = Unit | Building | ResourceNode;
+type HoverEntity = Unit | Building | ResourceNode | Caravan;
 
 interface EntityHoverPayload {
   entity: HoverEntity | null;
@@ -548,6 +549,12 @@ export class UIScene extends Phaser.Scene {
       if (u.side !== SIDE.player && !this.game_.fog.isVisible(tx, ty)) continue;
       mapUnit(tx, ty, u.side === SIDE.player ? pColor : aColor, 2);
     }
+    for (const c of this.game_.caravans) {
+      if (!c.alive) continue;
+      const { tx, ty } = this.game_.map.worldToTile(c.x, c.y);
+      if (!this.game_.fog.isVisible(tx, ty)) continue;
+      mapUnit(tx, ty, '#d9ad3d', 2);
+    }
 
     // View rect
     const cam = this.game_.cameras.main;
@@ -605,6 +612,7 @@ function stateLabel(state: Unit['state']): string {
 function describeTooltip(entity: HoverEntity): TooltipModel {
   if (entity instanceof Unit) return describeUnitTooltip(entity);
   if (entity instanceof Building) return describeBuildingTooltip(entity);
+  if (entity instanceof Caravan) return describeCaravanTooltip(entity);
   return describeResourceTooltip(entity);
 }
 
@@ -662,6 +670,18 @@ function describeResourceTooltip(r: ResourceNode): TooltipModel {
       { label: 'Тип', value: resourceLabel(r.resourceType) }
     ],
     role: r.resourceType === 'gold' ? 'Рабочие добывают здесь золото.' : 'Рабочие рубят деревья для древесины.'
+  };
+}
+
+function describeCaravanTooltip(c: Caravan): TooltipModel {
+  return {
+    title: 'Караван',
+    subtitle: `${sideLabel(c.side)} • странники`,
+    rows: [
+      { label: 'HP', value: `${Math.round(c.hp)}/${c.maxHp}` },
+      { label: 'Скорость', value: `${Math.round(c.speed)}` }
+    ],
+    role: 'Редкий нейтральный караван. Можно атаковать вручную ради добычи.'
   };
 }
 

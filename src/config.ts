@@ -210,6 +210,20 @@ export const RESOURCE = {
   gatherTime: 1650
 };
 
+export const CARAVAN_CONFIG = {
+  hp: 150,
+  speed: 46,
+  radius: 28,
+  sight: 0,
+  reward: { gold: 75, lumber: 35 },
+  firstSpawnMs: { min: 75000, max: 135000 },
+  repeatSpawnMs: { min: 180000, max: 300000 },
+  debugSpawnMs: { min: 6000, max: 10000 },
+  maxActive: 1,
+  enabledInSkirmish: true,
+  enabledInStory: false
+} as const;
+
 export const FOG = {
   updateMs: 220
 };

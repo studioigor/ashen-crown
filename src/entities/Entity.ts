@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { Side, COLORS } from '../config';
 
-export type EntityKind = 'unit' | 'building' | 'resource' | 'projectile';
+export type EntityKind = 'unit' | 'building' | 'resource' | 'projectile' | 'caravan';
 
 export interface IEntity {
   readonly id: number;

@@ -3,6 +3,7 @@ import type { BuildingKind, Race, UnitKind } from '../config';
 
 export type UnitFacing = 'south' | 'east' | 'north' | 'west';
 export type UnitAnimState = 'idle' | 'walk' | 'attack' | 'death' | 'work';
+export type FutureUnitAnimState = Exclude<UnitAnimState, 'work'>;
 export type BuildingStage = 'stage1' | 'stage2' | 'final' | 'destroying' | 'ruin';
 
 export const UNIT_FACINGS: readonly UnitFacing[] = ['south', 'east', 'north', 'west'];
@@ -47,7 +48,7 @@ export interface UnitSheetAsset extends ArtSheetAsset {
 export interface FutureUnitSheetAsset extends ArtSheetAsset {
   group: 'future-unit';
   unitKey: 'caravan';
-  anim: UnitAnimState;
+  anim: FutureUnitAnimState;
   framesPerFacing: number;
   fps: number;
   repeat: number;
@@ -97,6 +98,9 @@ export const UNIT_ART_DISPLAY: Record<UnitKind, DisplaySize> = {
   catapult: { width: 48, height: 48 }
 };
 
+export const CARAVAN_ART_DISPLAY: DisplaySize = { width: 96, height: 64 };
+export const CARAVAN_ART_FRAME: DisplaySize = { width: 192, height: 128 };
+
 export const BUILDING_ART_DISPLAY: Record<BuildingKind, DisplaySize> = {
   townhall: { width: 96, height: 96 },
   farm: { width: 64, height: 64 },
@@ -119,6 +123,14 @@ export function unitSheetKey(kind: UnitKind, race: Race, anim: UnitAnimState): s
 
 export function unitAnimKey(kind: UnitKind, race: Race, anim: UnitAnimState, facing: UnitFacing): string {
   return `${unitSheetKey(kind, race, anim)}_${facing}`;
+}
+
+export function caravanSheetKey(anim: FutureUnitAnimState): string {
+  return `art_unit_caravan_neutral_${anim}`;
+}
+
+export function caravanAnimKey(anim: FutureUnitAnimState, facing: UnitFacing): string {
+  return `${caravanSheetKey(anim)}_${facing}`;
 }
 
 export function buildingSheetKey(kind: BuildingKind, race: Race): string {
@@ -165,22 +177,22 @@ export const UNIT_SHEET_ASSETS: UnitSheetAsset[] = RACES.flatMap((race) =>
 );
 
 export const FUTURE_UNIT_SHEET_ASSETS: FutureUnitSheetAsset[] = UNIT_ANIM_STATES
-  .filter((anim) => anim !== 'work')
+  .filter((anim): anim is FutureUnitAnimState => anim !== 'work')
   .map((anim) => {
     const meta = UNIT_ANIM_META[anim];
     return {
       type: 'spritesheet' as const,
       group: 'future-unit' as const,
-      key: `art_unit_caravan_neutral_${anim}`,
+      key: caravanSheetKey(anim),
       path: `assets/art/future/caravan_${anim}.png`,
-      frameWidth: 192,
-      frameHeight: 128,
+      frameWidth: CARAVAN_ART_FRAME.width,
+      frameHeight: CARAVAN_ART_FRAME.height,
       unitKey: 'caravan',
       anim,
       framesPerFacing: meta.frames,
       fps: meta.fps,
       repeat: meta.repeat,
-      display: { width: 96, height: 64 },
+      display: CARAVAN_ART_DISPLAY,
       origin: { x: 0.5, y: 0.62 }
     };
   });
@@ -333,6 +345,15 @@ export function unitArtReady(scene: Phaser.Scene, kind: UnitKind, race: Race): b
 
 export function unitAnimReady(scene: Phaser.Scene, kind: UnitKind, race: Race, anim: UnitAnimState): boolean {
   return scene.textures.exists(unitSheetKey(kind, race, anim));
+}
+
+export function caravanArtReady(scene: Phaser.Scene): boolean {
+  const required: FutureUnitAnimState[] = ['idle', 'walk', 'death'];
+  return required.every((anim) => scene.textures.exists(caravanSheetKey(anim)));
+}
+
+export function caravanAnimReady(scene: Phaser.Scene, anim: FutureUnitAnimState): boolean {
+  return scene.textures.exists(caravanSheetKey(anim));
 }
 
 export function buildingArtReady(scene: Phaser.Scene, kind: BuildingKind, race: Race): boolean {
