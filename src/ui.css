@@ -75,12 +75,32 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
 }
 
 .res-gold { color: var(--ui-accent); }
 .res-lumber { color: var(--text-muted); }
 .res-food { color: #8bd36a; }
+
+.resource-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  image-rendering: auto;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+  flex: 0 0 auto;
+}
+
+.resource-label {
+  opacity: 0.82;
+}
+
+.resource-value {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.75);
+}
 
 .res-gold.pulse { 
   text-shadow: 0 0 16px var(--ui-accent); 
@@ -187,23 +207,26 @@
   background: var(--ui-panel);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--text-main);
-  padding: 6px 14px;
-  border-radius: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s ease-out, border-color 0.15s ease-out, box-shadow 0.15s ease-out, transform 0.15s ease-out;
   box-shadow: 0 6px 12px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  min-width: 150px;
-  min-height: 34px;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 166px;
+  min-height: 52px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   position: relative;
   overflow: hidden;
+  text-align: left;
 }
 
 .cmd-btn::before {
@@ -229,10 +252,33 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.5);
 }
 
+.cmd-icon {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  flex: 0 0 38px;
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px rgba(255,255,255,0.1), 0 2px 8px rgba(0,0,0,0.45);
+}
+
+.cmd-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  line-height: 1.08;
+}
+
+.cmd-label {
+  overflow-wrap: anywhere;
+}
+
 .cmd-btn span.cost {
   font-size: 0.85rem;
   color: var(--ui-accent);
-  margin-top: 6px;
   font-weight: 500;
   opacity: 0.9;
 }
@@ -254,6 +300,88 @@
   height: 100%;
   border-radius: 6px;
   box-shadow: inset 0 0 10px rgba(0,0,0,1);
+}
+
+/* ENTITY TOOLTIP */
+#entity-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 270px;
+  max-width: calc(100vw - 24px);
+  padding: 14px 16px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  color: var(--text-main);
+  background:
+    linear-gradient(rgba(7, 9, 12, 0.76), rgba(7, 9, 12, 0.76)),
+    var(--tooltip-frame);
+  background-size: 100% 100%;
+  border: 1px solid rgba(255, 223, 122, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 14px 32px rgba(0,0,0,0.65), inset 0 1px rgba(255,255,255,0.12);
+  backdrop-filter: blur(12px) saturate(130%);
+  -webkit-backdrop-filter: blur(12px) saturate(130%);
+  z-index: 30;
+  transition: opacity 0.1s ease-out;
+}
+
+#entity-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.entity-tooltip-title {
+  color: var(--ui-accent);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.85);
+}
+
+.entity-tooltip-subtitle {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.entity-tooltip-rows {
+  margin-top: 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.entity-tooltip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255,255,255,0.92);
+  font-size: 0.85rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.entity-tooltip-row span:first-child {
+  color: rgba(159, 202, 122, 0.9);
+  font-weight: 700;
+}
+
+.entity-tooltip-row span:last-child {
+  text-align: right;
+}
+
+.entity-tooltip-role {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.11);
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 /* PROGRESS BAR */

@@ -78,6 +78,8 @@ export class GameScene extends Phaser.Scene {
   private cursorSprite!: Phaser.GameObjects.Image;
   private lastCursorKey = 'cursor_default';
   private lastCursorCheckMs = 0;
+  private lastHoverCheckMs = 0;
+  private hoveredEntity: IEntity | null = null;
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -157,6 +159,7 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on('ui-minimap-click', this.onUiMinimapClick);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.emitEntityHover(null);
       this.game.events.off('ui-build', this.onUiBuild);
       this.game.events.off('ui-train', this.onUiTrain);
       this.game.events.off('ui-stop', this.onUiStop);
@@ -336,6 +339,7 @@ export class GameScene extends Phaser.Scene {
       if (this.placementKind && this.placementGhost) this.updatePlacementGhost(p.worldX, p.worldY);
       if (this.dragStart && p.leftButtonDown()) this.drawSelectionDrag(p);
       this.updateCursor(p);
+      this.updateEntityHover(p);
     });
 
     this.input.mouse?.disableContextMenu();
@@ -374,7 +378,47 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isOverUi(p: Phaser.Input.Pointer): boolean {
-    return p.y > VIEW_H - 150 || p.x > VIEW_W - 190;
+    const { x, y } = this.pointerClientPosition(p);
+    const el = document.elementFromPoint(x, y);
+    return !!el?.closest('#top-bar, #bottom-panel, #minimap-border, #game-over-screen.visible, #menu-layer.visible');
+  }
+
+  private pointerClientPosition(p: Phaser.Input.Pointer): { x: number; y: number } {
+    const ev = p.event as MouseEvent | undefined;
+    if (ev && typeof ev.clientX === 'number' && typeof ev.clientY === 'number') {
+      return { x: ev.clientX, y: ev.clientY };
+    }
+    const rect = this.game.canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (p.x / VIEW_W) * rect.width,
+      y: rect.top + (p.y / VIEW_H) * rect.height
+    };
+  }
+
+  private updateEntityHover(p: Phaser.Input.Pointer): void {
+    const now = this.time.now;
+    if (this.isOverUi(p) || this.dragStart || this.placementKind) {
+      this.lastHoverCheckMs = now;
+      this.emitEntityHover(null, p);
+      return;
+    }
+    if (now - this.lastHoverCheckMs < 80) return;
+    this.lastHoverCheckMs = now;
+
+    this.emitEntityHover(this.findEntityAt(p.worldX, p.worldY), p);
+  }
+
+  private emitEntityHover(entity: IEntity | null, p?: Phaser.Input.Pointer): void {
+    const next = entity?.alive ? entity : null;
+    if (!next && !this.hoveredEntity) return;
+    this.hoveredEntity = next;
+    const pointer = p ?? this.input.activePointer;
+    const screen = this.pointerClientPosition(pointer);
+    this.game.events.emit('ui-entity-hover', {
+      entity: this.hoveredEntity,
+      screenX: screen.x,
+      screenY: screen.y
+    });
   }
 
   private tileFromWorld(x: number, y: number): { tx: number; ty: number } {
@@ -1380,6 +1424,8 @@ export class GameScene extends Phaser.Scene {
       return true;
     });
     this.resources = this.resources.filter(r => r.alive);
+
+    if (this.hoveredEntity && !this.hoveredEntity.alive) this.emitEntityHover(null);
   }
 
   private checkVictory(): void {

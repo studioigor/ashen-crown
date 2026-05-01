@@ -1,15 +1,37 @@
 import Phaser from 'phaser';
 import {
   VIEW_W, VIEW_H, COLORS, MAP_W, MAP_H, WORLD_W, WORLD_H,
-  UNIT, BUILDING, Side, SIDE, BuildingKind, UnitKind, RACE_COLOR, Difficulty, DIFFICULTY
+  UNIT, BUILDING, Side, SIDE, BuildingKind, UnitKind, RACE_COLOR, RACE_LABEL, Difficulty, DIFFICULTY
 } from '../config';
 import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
+import { ResourceNode } from '../entities/ResourceNode';
+import { artAssetUrl } from '../assets/artManifest';
 import { GameScene } from './GameScene';
 
 interface UIInit {
   playerSide: Side;
   difficulty?: Difficulty;
+}
+
+type HoverEntity = Unit | Building | ResourceNode;
+
+interface EntityHoverPayload {
+  entity: HoverEntity | null;
+  screenX: number;
+  screenY: number;
+}
+
+interface TooltipRow {
+  label: string;
+  value: string;
+}
+
+interface TooltipModel {
+  title: string;
+  subtitle: string;
+  rows: TooltipRow[];
+  role: string;
 }
 
 export class UIScene extends Phaser.Scene {
@@ -21,6 +43,8 @@ export class UIScene extends Phaser.Scene {
   private lastPanelUpdate = 0;
   private lastMinimapUpdate = 0;
   private panelSignature = '';
+  private hoveredEntity: HoverEntity | null = null;
+  private hoverScreen = { x: 0, y: 0 };
 
   // DOM Elements
   private elUiLayer = document.getElementById('ui-layer')!;
@@ -36,6 +60,7 @@ export class UIScene extends Phaser.Scene {
   private elProgressFill = document.getElementById('ui-sel-progress-fill')!;
   private elActions = document.getElementById('ui-actions')!;
   private elMessage = document.getElementById('center-message')!;
+  private elTooltip = document.getElementById('entity-tooltip')!;
   private elGameOver = document.getElementById('game-over-screen')!;
   private elGameOverTitle = document.getElementById('game-over-title')!;
   private mmCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
@@ -56,6 +81,7 @@ export class UIScene extends Phaser.Scene {
   private onFlash = (m: string): void => this.showMessage(m);
   private onGameOver = (win: boolean): void => this.showGameOver(win);
   private onMode = (m: string): void => { this.elModeText.innerText = m; };
+  private onEntityHover = (payload: EntityHoverPayload): void => this.showEntityTooltip(payload);
 
   constructor() { super('UIScene'); }
 
@@ -75,8 +101,10 @@ export class UIScene extends Phaser.Scene {
     this.game.events.on('flash-message', this.onFlash);
     this.game.events.on('game-over', this.onGameOver);
     this.game.events.on('ui-mode', this.onMode);
+    this.game.events.on('ui-entity-hover', this.onEntityHover);
 
     this.mmCanvas.addEventListener('mousedown', this.onMinimapClick);
+    this.elTooltip.style.setProperty('--tooltip-frame', `url("${artAssetUrl('assets/art/ui/tooltip_frame.png')}")`);
 
     document.getElementById('btn-restart')!.onclick = () => {
       this.elGameOver.classList.remove('visible');
@@ -100,7 +128,9 @@ export class UIScene extends Phaser.Scene {
       this.game.events.off('flash-message', this.onFlash);
       this.game.events.off('game-over', this.onGameOver);
       this.game.events.off('ui-mode', this.onMode);
+      this.game.events.off('ui-entity-hover', this.onEntityHover);
       this.mmCanvas.removeEventListener('mousedown', this.onMinimapClick);
+      this.hideEntityTooltip();
       this.elUiLayer.style.display = 'none';
       this.elPanel.style.display = 'none';
       this.elGold.innerText = 'Золото: 0';
@@ -124,6 +154,7 @@ export class UIScene extends Phaser.Scene {
     if (this.lastPanelUpdate >= 250) {
       this.renderResources();
       if (!this.buildMenuOpen) this.refreshPanelText();
+      if (this.hoveredEntity) this.refreshEntityTooltip();
       this.lastPanelUpdate = 0;
     }
     if (this.lastMinimapUpdate >= 180) {
@@ -140,21 +171,29 @@ export class UIScene extends Phaser.Scene {
   private renderResources(): void {
     const p = this.game_.economy.get(this.playerSide);
     if (!p) return;
-    this.setResource(this.elGold, `Золото: ${p.gold}`, p.gold, this.prevGold);
-    this.setResource(this.elLumber, `Дерево: ${p.lumber}`, p.lumber, this.prevLumber);
-    this.setResource(this.elFood, `Лимит: ${p.food}/${p.foodCap}`, p.food + p.foodCap * 1000, this.prevFood + this.prevCap * 1000);
+    this.setResource(this.elGold, this.resourceHtml('gold', 'Золото', `${p.gold}`), p.gold, this.prevGold);
+    this.setResource(this.elLumber, this.resourceHtml('lumber', 'Дерево', `${p.lumber}`), p.lumber, this.prevLumber);
+    this.setResource(this.elFood, `<span class="resource-label">Лимит</span><span class="resource-value">${p.food}/${p.foodCap}</span>`, p.food + p.foodCap * 1000, this.prevFood + this.prevCap * 1000);
     this.prevGold = p.gold;
     this.prevLumber = p.lumber;
     this.prevFood = p.food;
     this.prevCap = p.foodCap;
   }
 
-  private setResource(el: HTMLElement, text: string, cur: number, prev: number): void {
-    el.innerText = text;
+  private resourceHtml(icon: 'gold' | 'lumber', label: string, value: string): string {
+    return `<img class="resource-icon" src="${this.iconUrl(icon)}" alt="" draggable="false"><span class="resource-label">${label}</span><span class="resource-value">${value}</span>`;
+  }
+
+  private setResource(el: HTMLElement, html: string, cur: number, prev: number): void {
+    el.innerHTML = html;
     if (prev >= 0 && cur !== prev) {
       el.classList.add('pulse');
       setTimeout(() => el.classList.remove('pulse'), 300);
     }
+  }
+
+  private iconUrl(icon: string): string {
+    return artAssetUrl(`assets/art/ui/icons/${icon}.png`);
   }
 
   private renderCommandPanel(): void {
@@ -191,9 +230,9 @@ export class UIScene extends Phaser.Scene {
     this.elProgressCont.style.display = 'none';
 
     const hasWorker = sel.some(u => u.isWorker());
-    if (hasWorker) this.addButton('Строить [B]', 'Открыть меню строительства', () => this.openBuildMenu());
-    this.addButton('Стоп [X]', 'Сбросить текущие приказы', () => this.game.events.emit('ui-stop'));
-    this.addButton('Атака [Q]', 'Атака-движение: Q, затем ЛКМ по точке', () => this.showMessage('Нажмите Q, затем ЛКМ по точке атаки'));
+    if (hasWorker) this.addButton('Строить [B]', 'Открыть меню строительства', () => this.openBuildMenu(), '', 'build');
+    this.addButton('Стоп [X]', 'Сбросить текущие приказы', () => this.game.events.emit('ui-stop'), '', 'stop');
+    this.addButton('Атака [Q]', 'Атака-движение: Q, затем ЛКМ по точке', () => this.showMessage('Нажмите Q, затем ЛКМ по точке атаки'), '', 'attack_move');
   }
 
   private computeSignature(): string {
@@ -290,7 +329,7 @@ export class UIScene extends Phaser.Scene {
       const def = UNIT[kind];
       const label = `Нанять ${labelForUnit(kind, b.race)}`;
       const tooltip = `${def.food} лимит, ${Math.round(def.build/1000)}с\nЦена: ${def.cost.gold}G, ${def.cost.lumber}L`;
-      this.addButton(label, tooltip, () => this.game.events.emit('ui-train', kind), `<br><span class="cost">${def.cost.gold}G  ${def.cost.lumber}L</span>`);
+      this.addButton(label, tooltip, () => this.game.events.emit('ui-train', kind), `<span class="cost">${def.cost.gold}G  ${def.cost.lumber}L</span>`, kind);
     }
   }
 
@@ -313,18 +352,116 @@ export class UIScene extends Phaser.Scene {
         this.game.events.emit('ui-build', kind);
         this.buildMenuOpen = false;
         this.renderCommandPanel();
-      }, `<br><span class="cost">${def.cost.gold}G ${def.cost.lumber}L ${foodAdd}</span>`);
+      }, `<span class="cost">${def.cost.gold}G ${def.cost.lumber}L ${foodAdd}</span>`, 'build');
     });
   }
 
-  private addButton(label: string, tooltip: string, onClick: () => void, extraHtml = ''): void {
+  private addButton(label: string, tooltip: string, onClick: () => void, extraHtml = '', icon?: string): void {
     const btn = document.createElement('button');
     btn.className = 'cmd-btn';
-    btn.innerHTML = label + extraHtml;
+    const iconHtml = icon ? `<img class="cmd-icon" src="${this.iconUrl(icon)}" alt="" draggable="false">` : '';
+    btn.innerHTML = `${iconHtml}<span class="cmd-copy"><span class="cmd-label">${escapeHtml(label)}</span>${extraHtml}</span>`;
     btn.onclick = onClick;
     btn.onmouseenter = () => { this.elModeText.innerText = tooltip; };
     btn.onmouseleave = () => { this.elModeText.innerText = ''; };
     this.elActions.appendChild(btn);
+  }
+
+  private showEntityTooltip(payload: EntityHoverPayload): void {
+    if (!payload.entity || !payload.entity.alive) {
+      this.hideEntityTooltip();
+      return;
+    }
+    this.hoveredEntity = payload.entity;
+    this.hoverScreen = { x: payload.screenX, y: payload.screenY };
+    this.refreshEntityTooltip();
+  }
+
+  private hideEntityTooltip(): void {
+    this.hoveredEntity = null;
+    this.elTooltip.classList.remove('visible');
+    this.elTooltip.setAttribute('aria-hidden', 'true');
+  }
+
+  private refreshEntityTooltip(): void {
+    const entity = this.hoveredEntity;
+    if (!entity || !entity.alive) {
+      this.hideEntityTooltip();
+      return;
+    }
+
+    const model = describeTooltip(entity);
+    this.elTooltip.replaceChildren();
+
+    const title = document.createElement('div');
+    title.className = 'entity-tooltip-title';
+    title.textContent = model.title;
+    this.elTooltip.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'entity-tooltip-subtitle';
+    subtitle.textContent = model.subtitle;
+    this.elTooltip.appendChild(subtitle);
+
+    const rows = document.createElement('div');
+    rows.className = 'entity-tooltip-rows';
+    for (const row of model.rows) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'entity-tooltip-row';
+      const label = document.createElement('span');
+      label.textContent = row.label;
+      const value = document.createElement('span');
+      value.textContent = row.value;
+      rowEl.append(label, value);
+      rows.appendChild(rowEl);
+    }
+    this.elTooltip.appendChild(rows);
+
+    const role = document.createElement('div');
+    role.className = 'entity-tooltip-role';
+    role.textContent = model.role;
+    this.elTooltip.appendChild(role);
+
+    this.elTooltip.style.visibility = 'hidden';
+    this.elTooltip.classList.add('visible');
+    this.elTooltip.setAttribute('aria-hidden', 'false');
+    this.positionEntityTooltip();
+    this.elTooltip.style.visibility = '';
+  }
+
+  private positionEntityTooltip(): void {
+    const margin = 12;
+    const gap = 16;
+    const rect = this.elTooltip.getBoundingClientRect();
+    let x = this.hoverScreen.x + gap;
+    let y = this.hoverScreen.y + gap;
+
+    if (x + rect.width > window.innerWidth - margin) x = this.hoverScreen.x - rect.width - gap;
+    if (y + rect.height > window.innerHeight - margin) y = this.hoverScreen.y - rect.height - gap;
+
+    const panelRect = this.blockingRect(this.elPanel);
+    const minimapRect = this.blockingRect(document.getElementById('minimap-border')!);
+    if (this.rectIntersects(x, y, rect.width, rect.height, panelRect) || this.rectIntersects(x, y, rect.width, rect.height, minimapRect)) {
+      const blockerTop = Math.min(panelRect?.top ?? Infinity, minimapRect?.top ?? Infinity);
+      if (Number.isFinite(blockerTop)) y = blockerTop - rect.height - gap;
+    }
+
+    x = Phaser.Math.Clamp(x, margin, Math.max(margin, window.innerWidth - rect.width - margin));
+    y = Phaser.Math.Clamp(y, margin, Math.max(margin, window.innerHeight - rect.height - margin));
+    this.elTooltip.style.left = `${Math.round(x)}px`;
+    this.elTooltip.style.top = `${Math.round(y)}px`;
+  }
+
+  private blockingRect(el: HTMLElement): DOMRect | null {
+    const style = window.getComputedStyle(el);
+    if (style.pointerEvents === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return null;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  }
+
+  private rectIntersects(x: number, y: number, w: number, h: number, rect: DOMRect | null): boolean {
+    if (!rect) return false;
+    return x < rect.right && x + w > rect.left && y < rect.bottom && y + h > rect.top;
   }
 
   private showMessage(text: string): void {
@@ -450,4 +587,119 @@ function stateLabel(state: Unit['state']): string {
   if (state === 'return_cargo') return 'несет груз';
   if (state === 'build') return 'строит';
   return 'мертв';
+}
+
+function describeTooltip(entity: HoverEntity): TooltipModel {
+  if (entity instanceof Unit) return describeUnitTooltip(entity);
+  if (entity instanceof Building) return describeBuildingTooltip(entity);
+  return describeResourceTooltip(entity);
+}
+
+function describeUnitTooltip(u: Unit): TooltipModel {
+  const rows: TooltipRow[] = [
+    { label: 'HP', value: `${Math.round(u.hp)}/${u.maxHp}` },
+    { label: 'Обзор', value: `${u.sight}` },
+    { label: 'Состояние', value: stateLabel(u.state) }
+  ];
+  if (u.canAttack()) {
+    rows.splice(1, 0, { label: 'Атака', value: `${u.atk}` }, { label: 'Дальность', value: `${Math.round(u.range)}` });
+  }
+  if (u.isWorker()) rows.push({ label: 'Груз', value: u.cargo ? `${resourceLabel(u.cargo.type)} x${u.cargo.amount}` : 'пусто' });
+  return {
+    title: labelForUnit(u.unitKind, u.race),
+    subtitle: `${sideLabel(u.side)} • ${RACE_LABEL[u.race]} • ${unitTypeLabel(u.unitKind)}`,
+    rows,
+    role: unitRole(u.unitKind)
+  };
+}
+
+function describeBuildingTooltip(b: Building): TooltipModel {
+  const rows: TooltipRow[] = [
+    { label: 'HP', value: `${Math.round(b.hp)}/${b.maxHp}` },
+    { label: 'Обзор', value: `${b.sight}` }
+  ];
+  if (b.canAttack()) rows.splice(1, 0, { label: 'Атака', value: `${b.attack}` }, { label: 'Дальность', value: `${Math.round(b.range)}` });
+
+  if (!b.completed) {
+    rows.push({ label: 'Состояние', value: `строится ${Math.floor(b.progressFraction() * 100)}%` });
+  } else if (b.queue.length > 0) {
+    const current = b.queue[0];
+    const pct = Math.floor((1 - current.remaining / current.total) * 100);
+    rows.push({ label: 'Производство', value: `${labelForUnit(current.kind, b.race)} ${pct}%` });
+    rows.push({ label: 'Очередь', value: b.queue.map(q => labelForUnit(q.kind, b.race)).join(' > ') });
+  } else {
+    rows.push({ label: 'Состояние', value: b.hp < b.maxHp ? 'повреждено' : 'готово' });
+  }
+  if (b.rally && b.completed) rows.push({ label: 'Сбор', value: `${Math.round(b.rally.x)}, ${Math.round(b.rally.y)}` });
+
+  return {
+    title: labelForBuilding(b.buildingKind, b.race),
+    subtitle: `${sideLabel(b.side)} • ${RACE_LABEL[b.race]} • ${buildingTypeLabel(b.buildingKind)}`,
+    rows,
+    role: buildingRole(b.buildingKind)
+  };
+}
+
+function describeResourceTooltip(r: ResourceNode): TooltipModel {
+  return {
+    title: r.resourceType === 'gold' ? 'Золотая жила' : 'Лес',
+    subtitle: 'Нейтральный ресурс',
+    rows: [
+      { label: 'Запас', value: `${Math.max(0, r.amount)}/${r.maxHp}` },
+      { label: 'Тип', value: resourceLabel(r.resourceType) }
+    ],
+    role: r.resourceType === 'gold' ? 'Рабочие добывают здесь золото.' : 'Рабочие рубят деревья для древесины.'
+  };
+}
+
+function sideLabel(side: Side): string {
+  if (side === SIDE.player) return 'Игрок';
+  if (side === SIDE.ai) return 'Враг';
+  return 'Нейтрально';
+}
+
+function resourceLabel(type: 'gold' | 'lumber'): string {
+  return type === 'gold' ? 'золото' : 'дерево';
+}
+
+function unitTypeLabel(kind: UnitKind): string {
+  if (kind === 'worker') return 'рабочий';
+  if (kind === 'footman') return 'пехота';
+  if (kind === 'archer') return 'стрелок';
+  if (kind === 'knight') return 'кавалерия';
+  return 'осада';
+}
+
+function buildingTypeLabel(kind: BuildingKind): string {
+  if (kind === 'townhall') return 'центр базы';
+  if (kind === 'farm') return 'снабжение';
+  if (kind === 'barracks') return 'казармы';
+  if (kind === 'workshop') return 'мастерская';
+  return 'оборона';
+}
+
+function unitRole(kind: UnitKind): string {
+  if (kind === 'worker') return 'Добывает ресурсы и строит здания.';
+  if (kind === 'footman') return 'Ближний бой и удержание линии.';
+  if (kind === 'archer') return 'Дальний бой против легких целей.';
+  if (kind === 'knight') return 'Быстрый ударный юнит ближнего боя.';
+  return 'Осадный юнит с большим уроном по зданиям.';
+}
+
+function buildingRole(kind: BuildingKind): string {
+  if (kind === 'townhall') return 'Принимает ресурсы и обучает рабочих.';
+  if (kind === 'farm') return 'Увеличивает лимит снабжения.';
+  if (kind === 'barracks') return 'Обучает пехоту, стрелков и кавалерию.';
+  if (kind === 'workshop') return 'Открывает тяжелые войска и осаду.';
+  return 'Автоматически атакует врагов рядом.';
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[ch]!));
 }
