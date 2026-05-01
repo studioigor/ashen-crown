@@ -717,21 +717,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private commandMoveTo(x: number, y: number): void {
-    this.orderMoveGroup(x, y);
+    this.orderMoveGroup(this.selected, x, y);
     this.effects.commandMarker(x, y, 0x66ff66, 'move', 'Идти');
     this.audio.play('move');
   }
 
   private commandAttackMoveWorld(p: Phaser.Input.Pointer): void {
     this.disableSelectedAutopilot();
-    const slots = formationSlots(this.selected, { x: p.worldX, y: p.worldY }, 34);
-    this.selected.forEach((u, i) => {
-      if (!u.canAttack()) { this.orderMove(u, slots[i].x, slots[i].y); return; }
-      u.clearOrders();
-      u.state = 'attack_move';
-      u.attackMoveTo = slots[i];
-      this.repath(u, slots[i].x, slots[i].y);
-    });
+    this.orderAttackMoveGroup(this.selected, p.worldX, p.worldY);
     this.effects.commandMarker(p.worldX, p.worldY, 0xff9944, 'attack', 'Атака');
     this.audio.play('attack');
   }
@@ -793,9 +786,51 @@ export class GameScene extends Phaser.Scene {
     if (v) this.effects.statusText(this.cameras.main.midPoint.x, this.cameras.main.midPoint.y - 100, 'Атака-движение', 0xffaa66);
   }
 
-  private orderMoveGroup(x: number, y: number): void {
-    const slots = formationSlots(this.selected, { x, y }, 32);
-    this.selected.forEach((u, i) => this.orderMove(u, slots[i].x, slots[i].y));
+  orderMoveGroup(units: Unit[], x: number, y: number): void {
+    const group = units.filter(u => u.alive);
+    if (group.length === 0) return;
+    if (group.length === 1) {
+      this.orderMove(group[0], x, y);
+      return;
+    }
+
+    const slots = this.resolveFormationSlots(group, formationSlots(group, { x, y }, 32), { x, y });
+    const sharedPath = this.findSharedGroupPath(group, x, y);
+    group.forEach((u, i) => {
+      u.clearOrders();
+      u.state = 'move';
+      this.applyGroupPath(u, slots[i], sharedPath);
+    });
+  }
+
+  orderAttackMoveGroup(units: Unit[], x: number, y: number): void {
+    const group = units.filter(u => u.alive);
+    if (group.length === 0) return;
+    if (group.length === 1) {
+      const u = group[0];
+      if (!u.canAttack()) {
+        this.orderMove(u, x, y);
+        return;
+      }
+      u.clearOrders();
+      u.state = 'attack_move';
+      u.attackMoveTo = { x, y };
+      this.repath(u, x, y);
+      return;
+    }
+
+    const slots = this.resolveFormationSlots(group, formationSlots(group, { x, y }, 34), { x, y });
+    const sharedPath = this.findSharedGroupPath(group, x, y);
+    group.forEach((u, i) => {
+      u.clearOrders();
+      if (!u.canAttack()) {
+        u.state = 'move';
+      } else {
+        u.state = 'attack_move';
+        u.attackMoveTo = slots[i];
+      }
+      this.applyGroupPath(u, slots[i], sharedPath);
+    });
   }
 
   orderMove(u: Unit, x: number, y: number): void {
@@ -846,6 +881,112 @@ export class GameScene extends Phaser.Scene {
     u.setPath(wp);
     u.pathDest = wp.length > 0 ? wp[wp.length - 1] : { x: wx, y: wy };
     u.pathRepathMs = 0;
+  }
+
+  private findSharedGroupPath(units: Unit[], x: number, y: number): { x: number; y: number }[] | null {
+    const center = this.groupCentroid(units);
+    const s = this.tileFromWorld(center.x, center.y);
+    const g = this.tileFromWorld(x, y);
+    if (!this.map.isWalkable(s.tx, s.ty)) return null;
+    const path = findPath(this.map, s.tx, s.ty, g.tx, g.ty);
+    if (path.length === 0) return null;
+    return path.map(p => ({ x: p.tx * TILE + TILE / 2, y: p.ty * TILE + TILE / 2 }));
+  }
+
+  private applyGroupPath(u: Unit, destination: { x: number; y: number }, sharedPath: { x: number; y: number }[] | null): void {
+    if (!sharedPath || sharedPath.length === 0) {
+      this.repath(u, destination.x, destination.y);
+      return;
+    }
+
+    const path = sharedPath.map(p => ({ x: p.x, y: p.y }));
+    path[path.length - 1] = { x: destination.x, y: destination.y };
+    u.setPath(path);
+    u.pathRepathMs = 0;
+  }
+
+  private resolveFormationSlots(
+    units: Unit[],
+    desiredSlots: { x: number; y: number }[],
+    fallback: { x: number; y: number }
+  ): { x: number; y: number }[] {
+    const reserved = new Set<string>();
+    const ignored = new Set(units);
+    return desiredSlots.map((slot, i) => this.resolveFormationSlot(units[i], slot, fallback, reserved, ignored));
+  }
+
+  private resolveFormationSlot(
+    unit: Unit,
+    desired: { x: number; y: number },
+    fallback: { x: number; y: number },
+    reserved: Set<string>,
+    ignored: Set<Unit>
+  ): { x: number; y: number } {
+    if (this.isFormationSlotAvailable(unit, desired, reserved, ignored)) {
+      this.reserveFormationSlot(desired, reserved);
+      return desired;
+    }
+
+    const origin = this.tileFromWorld(desired.x, desired.y);
+    for (let r = 1; r <= 6; r++) {
+      let best: { point: { x: number; y: number }; d: number } | null = null;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const point = this.map.tileToWorld(origin.tx + dx, origin.ty + dy);
+          if (!this.isFormationSlotAvailable(unit, point, reserved, ignored)) continue;
+          const d = Phaser.Math.Distance.Between(desired.x, desired.y, point.x, point.y);
+          if (!best || d < best.d) best = { point, d };
+        }
+      }
+      if (best) {
+        this.reserveFormationSlot(best.point, reserved);
+        return best.point;
+      }
+    }
+
+    if (this.isFormationSlotAvailable(unit, fallback, reserved, ignored)) {
+      this.reserveFormationSlot(fallback, reserved);
+      return fallback;
+    }
+    return fallback;
+  }
+
+  private isFormationSlotAvailable(
+    unit: Unit,
+    point: { x: number; y: number },
+    reserved: Set<string>,
+    ignored: Set<Unit>
+  ): boolean {
+    if (point.x < 0 || point.y < 0 || point.x >= WORLD_W || point.y >= WORLD_H) return false;
+    const t = this.tileFromWorld(point.x, point.y);
+    if (!this.map.isWalkable(t.tx, t.ty)) return false;
+    if (reserved.has(this.formationSlotKey(t.tx, t.ty))) return false;
+
+    for (const other of this.units) {
+      if (!other.alive || ignored.has(other)) continue;
+      const min = unit.radius + other.radius + 4;
+      if (Phaser.Math.Distance.Between(point.x, point.y, other.x, other.y) < min) return false;
+    }
+    return true;
+  }
+
+  private reserveFormationSlot(point: { x: number; y: number }, reserved: Set<string>): void {
+    const t = this.tileFromWorld(point.x, point.y);
+    reserved.add(this.formationSlotKey(t.tx, t.ty));
+  }
+
+  private formationSlotKey(tx: number, ty: number): string {
+    return `${tx}:${ty}`;
+  }
+
+  private groupCentroid(units: Unit[]): { x: number; y: number } {
+    let x = 0, y = 0;
+    for (const u of units) {
+      x += u.x;
+      y += u.y;
+    }
+    return { x: x / units.length, y: y / units.length };
   }
 
   beginPlacement(kind: BuildingKind): void {

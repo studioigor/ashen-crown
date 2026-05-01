@@ -62,14 +62,8 @@ export function runAI(scene: GameScene, ai: AIState, difficulty: Difficulty): vo
   if (armyScore >= ai.armyTargetScore) {
     const target = findAttackTarget(scene);
     if (target) {
-      for (const u of army) {
-        if (u.state !== 'attack' && u.state !== 'attack_move') {
-          u.clearOrders();
-          u.state = 'attack_move';
-          u.attackMoveTo = { x: target.x, y: target.y };
-          scene.repath(u, target.x, target.y);
-        }
-      }
+      const attackers = army.filter(u => u.state !== 'attack' && u.state !== 'attack_move');
+      scene.orderAttackMoveGroup(attackers, target.x, target.y);
       ai.phase = 'attack';
     }
   } else if (ai.phase === 'attack') {
@@ -174,9 +168,8 @@ function enemyPressureNear(scene: GameScene, hall: Building): boolean {
 }
 
 function rallyArmy(scene: GameScene, army: Unit[], hall: Building): void {
-  for (const u of army) {
-    if (u.state === 'idle' || u.state === 'attack_move') scene.orderMove(u, hall.x - 110, hall.y + 45);
-  }
+  const regrouping = army.filter(u => u.state === 'idle' || u.state === 'attack_move');
+  scene.orderMoveGroup(regrouping, hall.x - 110, hall.y + 45);
 }
 
 function findAttackTarget(scene: GameScene): Building | Unit | null {
