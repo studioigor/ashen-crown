@@ -3,6 +3,16 @@ import { IEntity, newEntityId, HealthBar } from './Entity';
 import { Side, UNIT, UnitKind, Race, VISUALS } from '../config';
 import { Building } from './Building';
 import { ResourceNode, ResourceType } from './ResourceNode';
+import {
+  UNIT_ART_DISPLAY,
+  getUnitFacingFromVector,
+  type UnitAnimState,
+  type UnitFacing,
+  unitAnimKey,
+  unitAnimReady,
+  unitArtReady,
+  unitSheetKey
+} from '../assets/artManifest';
 
 export type UnitState =
   | 'idle'
@@ -39,8 +49,10 @@ const SHADOW_KEY: Record<UnitKind, string> = {
 };
 
 const BODY_HEIGHT: Record<UnitKind, number> = {
-  worker: 40, footman: 44, archer: 44, knight: 44, catapult: 48
+  worker: 40, footman: 44, archer: 44, knight: 52, catapult: 48
 };
+
+const UNIT_ART_FRAME_SIZE = 128;
 
 export class Unit implements IEntity {
   readonly id = newEntityId();
@@ -88,6 +100,9 @@ export class Unit implements IEntity {
   private lastX = 0;
   private lastY = 0;
   private lastVisible = true;
+  private usingArtSheet = false;
+  private facing: UnitFacing = 'south';
+  private currentArtAnim: UnitAnimState | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, kind: UnitKind, side: Side, race: Race) {
     this.unitKind = kind; this.side = side; this.race = race;
@@ -102,23 +117,30 @@ export class Unit implements IEntity {
     this.shadow = scene.add.image(x, y + BODY_HEIGHT[kind] * 0.4, SHADOW_KEY[kind]).setDepth(28);
     this.shadow.setAlpha(0.85);
 
-    const texKey = `unit_${kind}_${race}`;
-    this.sprite = scene.add.sprite(x, y, texKey);
+    this.usingArtSheet = unitArtReady(scene, kind, race);
+    const texKey = this.usingArtSheet ? unitSheetKey(kind, race, 'idle') : `unit_${kind}_${race}`;
+    this.sprite = scene.add.sprite(x, y, texKey, this.usingArtSheet ? 0 : undefined);
     this.sprite.setDepth(30);
-    this.sprite.setOrigin(0.5, 0.5);
+    this.sprite.setOrigin(0.5, this.usingArtSheet ? 0.58 : 0.5);
+    if (this.usingArtSheet) {
+      const display = UNIT_ART_DISPLAY[kind];
+      const renderSize = Math.max(display.width, display.height);
+      this.sprite.setScale(renderSize / UNIT_ART_FRAME_SIZE);
+    }
     this.sprite.setData('entity', this);
 
-    if (kind !== 'catapult') {
+    if (this.usingArtSheet || kind === 'catapult') {
+      this.weapon = null;
+    } else {
       const rig = WEAPON_RIG[kind];
       this.weapon = scene.add.image(x + rig.ox, y + rig.oy, `unit_${kind}_${race}_weapon`);
       this.weapon.setOrigin(rig.originX, rig.originY);
       this.weapon.setRotation(rig.baseRot);
       this.weapon.setDepth(31);
-    } else {
-      this.weapon = null;
     }
 
     this.hb = new HealthBar(scene, this, 22);
+    if (this.usingArtSheet) this.playArtAnimation('idle', true);
     this.lastX = x; this.lastY = y;
   }
 
@@ -146,6 +168,24 @@ export class Unit implements IEntity {
     if (!this.alive) return;
     this.alive = false;
     this.state = 'dead';
+    if (this.usingArtSheet && this.playArtAnimation('death', true)) {
+      const scene = this.sprite.scene;
+      const parts = [this.sprite, this.shadow, this.cargoBadge].filter((p): p is Phaser.GameObjects.Sprite | Phaser.GameObjects.Image => !!p);
+      scene.tweens.add({
+        targets: parts,
+        alpha: 0,
+        duration: 360,
+        delay: 560,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          this.sprite.destroy();
+          this.shadow.destroy();
+          this.cargoBadge?.destroy();
+        }
+      });
+      this.hb.destroy();
+      return;
+    }
     // Death animation on sprite (then destroy all parts)
     const scene = this.sprite.scene;
     const parts = [this.sprite, this.shadow, this.weapon, this.cargoBadge].filter((p): p is Phaser.GameObjects.Sprite | Phaser.GameObjects.Image => !!p);
@@ -203,6 +243,18 @@ export class Unit implements IEntity {
   playAttackSwing(): void {
     if (!this.alive) return;
     const scene = this.sprite.scene;
+    if (this.usingArtSheet) {
+      if (this.attackBusy) return;
+      this.faceTowardActiveTarget();
+      if (this.playArtAnimation('attack', true)) {
+        this.attackBusy = true;
+        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+          this.attackBusy = false;
+          if (this.alive) this.playArtAnimation('idle', true);
+        });
+        return;
+      }
+    }
     if (this.unitKind === 'catapult') {
       // Recoil: body scales and jumps back slightly
       scene.tweens.add({
@@ -271,6 +323,16 @@ export class Unit implements IEntity {
     if (this.workBusy || now - this.lastWorkSwing < 260) return;
     this.lastWorkSwing = now;
     this.workBusy = true;
+    if (this.usingArtSheet) {
+      this.faceTowardActiveTarget();
+      if (this.playArtAnimation(this.unitKind === 'worker' ? 'work' : 'attack', true)) {
+        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+          this.workBusy = false;
+          if (this.alive) this.playArtAnimation('idle', true);
+        });
+        return;
+      }
+    }
     const sign = this.facingFlip ? -1 : 1;
 
     if (this.weapon) {
@@ -314,7 +376,30 @@ export class Unit implements IEntity {
     if (!this.lastVisible) return;
 
     const dx = this.sprite.x - this.lastX;
-    const moving = Math.abs(dx) + Math.abs(this.sprite.y - this.lastY) > 0.15;
+    const dy = this.sprite.y - this.lastY;
+    const moving = Math.abs(dx) + Math.abs(dy) > 0.15;
+
+    if (this.usingArtSheet) {
+      if (moving) {
+        this.facing = getUnitFacingFromVector(dx, dy, this.facing);
+        this.playArtAnimation('walk');
+        const now = this.sprite.scene.time.now;
+        if (now - this.lastStepDust > VISUALS.stepDustMs) {
+          this.lastStepDust = now;
+          const anyScene = this.sprite.scene as any;
+          if (anyScene.effects?.stepDust) anyScene.effects.stepDust(this.sprite.x, this.sprite.y + BODY_HEIGHT[this.unitKind] * 0.35);
+        }
+      } else if (!this.attackBusy && !this.workBusy) {
+        this.playArtAnimation('idle');
+      }
+
+      this.shadow.setPosition(this.sprite.x, this.sprite.y + BODY_HEIGHT[this.unitKind] * 0.42);
+      this.updateCargoBadge();
+      this.updateDepths();
+      this.lastX = this.sprite.x;
+      this.lastY = this.sprite.y;
+      return;
+    }
 
     if (Math.abs(dx) > 0.4) {
       const shouldFlip = dx < 0;
@@ -364,6 +449,25 @@ export class Unit implements IEntity {
 
     this.lastX = this.sprite.x;
     this.lastY = this.sprite.y;
+  }
+
+  private faceTowardActiveTarget(): void {
+    const target = this.targetUnit ?? this.targetBuilding ?? this.targetResource;
+    if (!target) return;
+    this.facing = getUnitFacingFromVector(target.x - this.sprite.x, target.y - this.sprite.y, this.facing);
+  }
+
+  private playArtAnimation(anim: UnitAnimState, restart = false): boolean {
+    if (!this.usingArtSheet) return false;
+    let state = anim;
+    if (state === 'work' && !unitAnimReady(this.sprite.scene, this.unitKind, this.race, 'work')) state = 'attack';
+    if (!unitAnimReady(this.sprite.scene, this.unitKind, this.race, state)) return false;
+    const key = unitAnimKey(this.unitKind, this.race, state, this.facing);
+    if (!this.sprite.scene.anims.exists(key)) return false;
+    if (!restart && this.currentArtAnim === state && this.sprite.anims.currentAnim?.key === key) return true;
+    this.currentArtAnim = state;
+    this.sprite.play(key, restart);
+    return true;
   }
 
   private updateCargoBadge(): void {

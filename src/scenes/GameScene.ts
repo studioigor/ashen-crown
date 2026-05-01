@@ -20,6 +20,12 @@ import { EffectsSystem } from '../systems/EffectsSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { formationSlots } from '../systems/Formation';
 import { nearestReachableWalkable } from '../world/MapValidation';
+import {
+  BUILDING_ART_DISPLAY,
+  buildingArtReady,
+  buildingSheetKey,
+  getBuildingStageFrame
+} from '../assets/artManifest';
 
 export interface GameInit {
   playerRace: Race;
@@ -683,7 +689,15 @@ export class GameScene extends Phaser.Scene {
     if (!hasWorker) { this.flashMessage('Нужен рабочий'); this.audio.play('error'); return; }
     this.cancelPlacement();
     this.placementKind = kind;
-    this.placementGhost = this.add.sprite(0, 0, `building_${kind}_${this.playerRace}`).setAlpha(0.72).setDepth(500);
+    if (buildingArtReady(this, kind, this.playerRace)) {
+      const display = BUILDING_ART_DISPLAY[kind];
+      this.placementGhost = this.add.sprite(0, 0, buildingSheetKey(kind, this.playerRace), getBuildingStageFrame('final'))
+        .setDisplaySize(display.width, display.height)
+        .setAlpha(0.72)
+        .setDepth(500);
+    } else {
+      this.placementGhost = this.add.sprite(0, 0, `building_${kind}_${this.playerRace}`).setAlpha(0.72).setDepth(500);
+    }
     this.game.events.emit('ui-mode', `Строительство: ${BUILDING[kind].labelByRace[this.playerRace]}`);
   }
 

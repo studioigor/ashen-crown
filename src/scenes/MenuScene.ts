@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Race, Difficulty } from '../config';
 import videoUrl from '../menu/video-background.mp4?url';
+import { ART_RUNTIME_MANIFEST_KEY, artAssetUrl, type RuntimeArtManifest } from '../assets/artManifest';
 
 export class MenuScene extends Phaser.Scene {
   private selectedDifficulty: Difficulty = 'normal';
@@ -35,6 +36,7 @@ export class MenuScene extends Phaser.Scene {
     }
 
     if (this.menuEl) {
+      this.applyArtBackground();
       this.menuEl.style.display = 'flex';
       requestAnimationFrame(() => this.menuEl?.classList.add('visible'));
       this.menuEl.querySelectorAll<HTMLElement>('.menu-race').forEach(b => b.addEventListener('click', this.raceHandler));
@@ -55,6 +57,8 @@ export class MenuScene extends Phaser.Scene {
   private teardown(): void {
     if (this.menuEl) {
       this.menuEl.classList.remove('visible');
+      this.menuEl.classList.remove('has-art-bg');
+      this.menuEl.style.removeProperty('--menu-bg-art');
       this.menuEl.style.display = 'none';
       this.menuEl.querySelectorAll<HTMLElement>('.menu-race').forEach(b => b.removeEventListener('click', this.raceHandler));
       this.menuEl.querySelectorAll<HTMLElement>('.menu-diff').forEach(b => b.removeEventListener('click', this.diffHandler));
@@ -67,5 +71,15 @@ export class MenuScene extends Phaser.Scene {
 
   private start(race: Race): void {
     this.scene.start('GameScene', { playerRace: race, difficulty: this.selectedDifficulty });
+  }
+
+  private applyArtBackground(): void {
+    if (!this.menuEl) return;
+    const runtime = this.cache.json.get(ART_RUNTIME_MANIFEST_KEY) as RuntimeArtManifest | undefined;
+    const enabled = runtime?.loadAll || runtime?.enabledKeys?.includes('menu_background_map');
+    if (!enabled) return;
+    this.menuEl.style.setProperty('--menu-bg-art', `url("${artAssetUrl('assets/art/menu/background_map.png')}")`);
+    this.menuEl.classList.add('has-art-bg');
+    if (this.videoEl) this.videoEl.classList.remove('visible');
   }
 }

@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ashen Crown Art Sample</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #151814;
+        --panel: #22271f;
+        --panel-2: #2b3127;
+        --line: #4b543f;
+        --text: #eee8d7;
+        --muted: #b9b094;
+        --accent: #d7aa52;
+        --grass-a: #60763a;
+        --grass-b: #42572b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 18% 0%, rgba(215, 170, 82, 0.14), transparent 32rem),
+          linear-gradient(180deg, #181b15 0%, var(--bg) 100%);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      main {
+        width: min(1440px, calc(100vw - 28px));
+        margin: 0 auto;
+        padding: 24px 0 44px;
+      }
+
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        align-items: end;
+        padding: 14px 0;
+        background: linear-gradient(180deg, rgba(21, 24, 20, 0.98), rgba(21, 24, 20, 0.86));
+        backdrop-filter: blur(8px);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 24px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        margin: 24px 0 12px;
+        color: var(--accent);
+        font-size: 17px;
+      }
+
+      h3 {
+        font-size: 14px;
+        color: var(--text);
+      }
+
+      .subhead {
+        max-width: 760px;
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: auto auto auto;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(34, 39, 31, 0.94);
+      }
+
+      label {
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      input,
+      select {
+        accent-color: var(--accent);
+      }
+
+      input[type="range"] {
+        width: 132px;
+      }
+
+      select {
+        min-width: 140px;
+        padding: 6px 8px;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #20251e;
+      }
+
+      .unit-section,
+      .building-section,
+      .asset-section {
+        margin-top: 16px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(34, 39, 31, 0.92);
+      }
+
+      .unit-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .tag {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .anim-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(620px, 1fr));
+        gap: 12px;
+      }
+
+      .anim-card {
+        padding: 10px;
+        border: 1px solid rgba(75, 84, 63, 0.75);
+        border-radius: 8px;
+        background: rgba(43, 49, 39, 0.84);
+      }
+
+      .anim-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .direction-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .direction {
+        min-width: 0;
+      }
+
+      .direction-name {
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        text-align: center;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid rgba(0, 0, 0, 0.35);
+        border-radius: 6px;
+        background: #40572b;
+      }
+
+      .buildings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+        gap: 12px;
+      }
+
+      .building-card {
+        padding: 10px;
+        border: 1px solid rgba(75, 84, 63, 0.75);
+        border-radius: 8px;
+        background: rgba(43, 49, 39, 0.84);
+      }
+
+      .building-preview {
+        margin-top: 10px;
+      }
+
+      .building-preview canvas {
+        max-width: 320px;
+        margin: 0 auto;
+      }
+
+      .building-stage-row {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .stage {
+        min-height: 126px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        background:
+          linear-gradient(30deg, rgba(255, 255, 255, 0.05) 12%, transparent 12% 50%, rgba(255, 255, 255, 0.05) 50% 62%, transparent 62%),
+          linear-gradient(150deg, rgba(0, 0, 0, 0.08) 12%, transparent 12% 50%, rgba(0, 0, 0, 0.08) 50% 62%, transparent 62%),
+          linear-gradient(180deg, var(--grass-a), var(--grass-b));
+        background-size: 28px 28px, 28px 28px, 100% 100%;
+      }
+
+      .stage canvas {
+        width: 100%;
+        max-width: 126px;
+        border: 0;
+        background: transparent;
+      }
+
+      .asset-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+        gap: 12px;
+      }
+
+      .asset-card {
+        padding: 10px;
+        border: 1px solid rgba(75, 84, 63, 0.75);
+        border-radius: 8px;
+        background: rgba(43, 49, 39, 0.84);
+      }
+
+      .asset-card img {
+        display: block;
+        max-width: 100%;
+        max-height: 170px;
+        margin: 8px auto 0;
+        object-fit: contain;
+        border-radius: 6px;
+        background:
+          linear-gradient(45deg, #2d3329 25%, transparent 25% 75%, #2d3329 75%),
+          linear-gradient(45deg, #2d3329 25%, #20251e 25% 75%, #2d3329 75%);
+        background-position: 0 0, 10px 10px;
+        background-size: 20px 20px;
+      }
+
+      @media (max-width: 760px) {
+        header,
+        .controls {
+          display: grid;
+          align-items: start;
+        }
+
+        .anim-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .buildings-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Ashen Crown Art Sample</h1>
+          <p class="subhead">
+            Просмотр runtime-ассетов после нормализации: все юниты, направления,
+            анимации, building stages и ключевые gameplay-ассеты. Отрисовка юнитов
+            использует uniform scale без растяжения квадратных кадров.
+          </p>
+        </div>
+        <div class="controls">
+          <label>
+            Unit scale
+            <input id="scale" type="range" min="1" max="7" value="4" />
+          </label>
+          <label>
+            FPS
+            <input id="fps" type="range" min="2" max="14" value="7" />
+          </label>
+          <label>
+            Filter
+            <select id="raceFilter">
+              <option value="all">all</option>
+              <option value="alliance">alliance</option>
+              <option value="horde">horde</option>
+              <option value="neutral">neutral</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <h2>Units And Animations</h2>
+      <div id="units"></div>
+
+      <h2>Building Stages</h2>
+      <div class="buildings-grid" id="buildings"></div>
+
+      <h2>Gameplay Assets</h2>
+      <div class="asset-grid" id="assets"></div>
+    </main>
+
+    <script>
+      const root = "../../public/assets/art";
+      const directions = ["south", "east", "north", "west"];
+      const animMeta = {
+        idle: { frames: 4, fps: 5 },
+        walk: { frames: 8, fps: 10 },
+        attack: { frames: 6, fps: 12 },
+        death: { frames: 8, fps: 10 },
+        work: { frames: 6, fps: 10 },
+      };
+
+      const units = [
+        { race: "alliance", kind: "worker", label: "Alliance Worker", display: [40, 40], anims: ["idle", "walk", "work", "attack", "death"] },
+        { race: "alliance", kind: "footman", label: "Alliance Footman", display: [44, 44], anims: ["idle", "walk", "attack", "death"] },
+        { race: "alliance", kind: "archer", label: "Alliance Ranger", display: [44, 44], anims: ["idle", "walk", "attack", "death"] },
+        { race: "alliance", kind: "knight", label: "Alliance Knight", display: [52, 52], anims: ["idle", "walk", "attack", "death"] },
+        { race: "alliance", kind: "catapult", label: "Alliance Ballista", display: [48, 48], anims: ["idle", "walk", "attack", "death"] },
+        { race: "horde", kind: "worker", label: "Horde Peon", display: [40, 40], anims: ["idle", "walk", "work", "attack", "death"] },
+        { race: "horde", kind: "footman", label: "Horde Grunt", display: [44, 44], anims: ["idle", "walk", "attack", "death"] },
+        { race: "horde", kind: "archer", label: "Horde Headhunter", display: [44, 44], anims: ["idle", "walk", "attack", "death"] },
+        { race: "horde", kind: "knight", label: "Horde Raider", display: [52, 52], anims: ["idle", "walk", "attack", "death"] },
+        { race: "horde", kind: "catapult", label: "Horde Catapult", display: [48, 48], anims: ["idle", "walk", "attack", "death"] },
+        { race: "neutral", kind: "caravan", label: "Neutral Caravan", display: [96, 64], anims: ["idle", "walk", "attack", "death"], frame: [192, 128], base: `${root}/future/caravan` },
+      ];
+
+      const buildings = [
+        ["alliance", "townhall", "Alliance Town Hall", [192, 192], [96, 96]],
+        ["alliance", "farm", "Alliance Farm", [128, 128], [64, 64]],
+        ["alliance", "barracks", "Alliance Barracks", [192, 192], [96, 96]],
+        ["alliance", "workshop", "Alliance Workshop", [192, 192], [96, 96]],
+        ["alliance", "tower", "Alliance Tower", [128, 128], [64, 64]],
+        ["horde", "townhall", "Horde Great Hall", [192, 192], [96, 96]],
+        ["horde", "farm", "Horde Burrow", [128, 128], [64, 64]],
+        ["horde", "barracks", "Horde Barracks", [192, 192], [96, 96]],
+        ["horde", "workshop", "Horde Siege Lodge", [192, 192], [96, 96]],
+        ["horde", "tower", "Horde Watch Tower", [128, 128], [64, 64]],
+      ];
+
+      const assets = [
+        ["terrain", "Grass", `${root}/terrain/tile_grass.png`],
+        ["terrain", "Grass Variant", `${root}/terrain/tile_grass2.png`],
+        ["terrain", "Dirt Road", `${root}/terrain/tile_dirt.png`],
+        ["terrain", "Forest Floor", `${root}/terrain/tile_forest.png`],
+        ["terrain", "Stone", `${root}/terrain/tile_stone.png`],
+        ["terrain", "Water 0", `${root}/terrain/tile_water_0.png`],
+        ["terrain", "Water 1", `${root}/terrain/tile_water_1.png`],
+        ["terrain", "Water 2", `${root}/terrain/tile_water_2.png`],
+        ["terrain", "Water 3", `${root}/terrain/tile_water_3.png`],
+        ["resources", "Gold Mine", `${root}/resources/goldmine.png`],
+        ["resources", "Gold Mine Damaged", `${root}/resources/goldmine_damaged.png`],
+        ["resources", "Gold Mine Depleted", `${root}/resources/goldmine_depleted.png`],
+        ["resources", "Tree", `${root}/resources/tree.png`],
+        ["resources", "Tree Stump", `${root}/resources/tree_stump.png`],
+        ["resources", "Tree Log", `${root}/resources/tree_log.png`],
+        ["resources", "Tree Trunk", `${root}/resources/tree_trunk.png`],
+        ["resources", "Tree Canopy", `${root}/resources/tree_canopy.png`],
+        ["fx", "Arrow", `${root}/fx/projectile_arrow.png`],
+        ["fx", "Stone Projectile", `${root}/fx/projectile_stone.png`],
+        ["fx", "Tower Bolt", `${root}/fx/projectile_tower.png`],
+        ["fx", "Spark", `${root}/fx/px_spark.png`],
+        ["fx", "Flame", `${root}/fx/px_flame.png`],
+        ["fx", "Blood", `${root}/fx/px_blood.png`],
+        ["fx", "Leaf", `${root}/fx/px_leaf.png`],
+        ["fx", "Star", `${root}/fx/px_star.png`],
+        ["fx", "Smoke Dark", `${root}/fx/px_smoke_dark.png`],
+        ["fx", "Smoke Light", `${root}/fx/px_smoke_light.png`],
+        ["fx", "Dust", `${root}/fx/px_dust.png`],
+        ["fx", "Mist", `${root}/fx/px_mist.png`],
+        ["fx", "Glow", `${root}/fx/px_glow.png`],
+        ["fx", "Crater", `${root}/fx/px_crater.png`],
+        ["fx", "Shockwave", `${root}/fx/px_shockwave.png`],
+        ["fx", "Arrow Trail", `${root}/fx/px_arrow_trail.png`],
+        ["fx", "Debris 1", `${root}/fx/px_debris_1.png`],
+        ["fx", "Debris 2", `${root}/fx/px_debris_2.png`],
+        ["fx", "Debris 3", `${root}/fx/px_debris_3.png`],
+        ["ui", "Default Cursor", `${root}/ui/cursor_default.png`],
+        ["ui", "Attack Cursor", `${root}/ui/cursor_attack.png`],
+        ["ui", "Build OK Cursor", `${root}/ui/cursor_build_ok.png`],
+        ["ui", "Build No Cursor", `${root}/ui/cursor_build_no.png`],
+        ["ui", "Gather Cursor", `${root}/ui/cursor_gather.png`],
+        ["ui", "Selection Ring S", `${root}/ui/ring_select_s.png`],
+        ["ui", "Selection Ring M", `${root}/ui/ring_select_m.png`],
+        ["ui", "Selection Ring L", `${root}/ui/ring_select_l.png`],
+        ["ui", "Panel Frame", `${root}/ui/panel_frame.png`],
+        ["ui", "Tooltip Frame", `${root}/ui/tooltip_frame.png`],
+        ["ui", "Minimap Frame", `${root}/ui/minimap_frame.png`],
+        ["icons", "Stop", `${root}/ui/icons/stop.png`],
+        ["icons", "Attack Move", `${root}/ui/icons/attack_move.png`],
+        ["icons", "Build", `${root}/ui/icons/build.png`],
+        ["icons", "Repair", `${root}/ui/icons/repair.png`],
+        ["icons", "Rally", `${root}/ui/icons/rally.png`],
+        ["icons", "Worker", `${root}/ui/icons/worker.png`],
+        ["icons", "Footman", `${root}/ui/icons/footman.png`],
+        ["icons", "Archer", `${root}/ui/icons/archer.png`],
+        ["icons", "Knight", `${root}/ui/icons/knight.png`],
+        ["icons", "Catapult", `${root}/ui/icons/catapult.png`],
+        ["icons", "Return Cargo", `${root}/ui/icons/return_cargo.png`],
+        ["icons", "Gather Gold", `${root}/ui/icons/gather_gold.png`],
+        ["icons", "Gather Lumber", `${root}/ui/icons/gather_lumber.png`],
+        ["icons", "Patrol", `${root}/ui/icons/patrol.png`],
+        ["icons", "Hold Position", `${root}/ui/icons/hold_position.png`],
+        ["icons", "Autopilot", `${root}/ui/icons/autopilot.png`],
+        ["icons", "Formation", `${root}/ui/icons/formation.png`],
+        ["icons", "Support", `${root}/ui/icons/support.png`],
+        ["icons", "Gold", `${root}/ui/icons/gold.png`],
+        ["icons", "Lumber", `${root}/ui/icons/lumber.png`],
+      ];
+
+      const previews = [];
+      const buildingPreviews = [];
+      const images = new Map();
+      const buildingStageNames = ["stage1", "stage2", "final", "destroying", "ruin"];
+      const buildingStageCycle = [0, 1, 2, 2, 2, 3, 4, 4];
+
+      function imageFor(src) {
+        if (!images.has(src)) {
+          const img = new Image();
+          img.src = src;
+          images.set(src, img);
+        }
+        return images.get(src);
+      }
+
+      function unitSheet(unit, anim) {
+        if (unit.base) return `${unit.base}_${anim}.png`;
+        return `${root}/units/${unit.race}/${unit.kind}_${anim}.png`;
+      }
+
+      function drawStageBackground(ctx, width, height) {
+        const tile = 18;
+        ctx.fillStyle = "#4f6632";
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = "rgba(255,255,255,0.045)";
+        for (let y = -tile; y < height + tile; y += tile) {
+          for (let x = -tile; x < width + tile; x += tile) {
+            if (((x + y) / tile) % 2 === 0) ctx.fillRect(x, y, tile, tile);
+          }
+        }
+      }
+
+      function fitDraw(display, width, height, requestedScale = 1, padding = 18) {
+        const fitScale = Math.min(
+          requestedScale,
+          (width - padding * 2) / display[0],
+          (height - padding * 2) / display[1],
+        );
+        const scale = Math.max(0.1, fitScale);
+        return {
+          width: display[0] * scale,
+          height: display[1] * scale,
+          scale,
+        };
+      }
+
+      function drawPreview(preview, now) {
+        const ctx = preview.canvas.getContext("2d");
+        const width = preview.canvas.width;
+        const height = preview.canvas.height;
+        drawStageBackground(ctx, width, height);
+
+        const img = preview.image;
+        if (!img.complete || img.naturalWidth === 0) return;
+
+        const fps = Number(document.querySelector("#fps").value);
+        const frame = Math.floor((now / 1000) * fps) % preview.frames;
+        const row = directions.indexOf(preview.direction);
+        const sx = frame * preview.frame[0];
+        const sy = row * preview.frame[1];
+
+        const requestedScale = Number(document.querySelector("#scale").value);
+        const size = fitDraw(preview.display, width, height, requestedScale, 14);
+        const dw = size.width;
+        const dh = size.height;
+        const dx = Math.round((width - dw) / 2);
+        const dy = Math.round(height - dh - 18);
+
+        ctx.fillStyle = "rgba(0,0,0,0.34)";
+        ctx.beginPath();
+        ctx.ellipse(width / 2, height - 13, Math.max(14, dw * 0.34), Math.max(4, dh * 0.08), 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.drawImage(img, sx, sy, preview.frame[0], preview.frame[1], dx, dy, dw, dh);
+      }
+
+      function drawBuildingFrame(canvas, img, index, frame, display, label = "") {
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width;
+        const height = canvas.height;
+        const labelHeight = label ? 22 : 0;
+        const contentHeight = height - labelHeight;
+        drawStageBackground(ctx, width, height);
+
+        if (!img.complete || img.naturalWidth === 0) return;
+
+        const size = fitDraw(display, width, contentHeight, 1.28, 12);
+        const dx = Math.round((width - size.width) / 2);
+        const dy = Math.round((contentHeight - size.height) / 2);
+
+        ctx.fillStyle = "rgba(0,0,0,0.28)";
+        ctx.beginPath();
+        ctx.ellipse(width / 2, contentHeight - 8, Math.max(20, size.width * 0.36), Math.max(5, size.height * 0.07), 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.drawImage(img, index * frame[0], 0, frame[0], frame[1], dx, dy, size.width, size.height);
+
+        if (label) {
+          ctx.fillStyle = "rgba(0,0,0,0.48)";
+          ctx.fillRect(0, height - 22, width, 22);
+          ctx.fillStyle = "#eee8d7";
+          ctx.font = "12px Inter, system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, width / 2, height - 11);
+        }
+      }
+
+      function drawBuildingPreview(preview, now) {
+        const cycleIndex = Math.floor(now / 650) % buildingStageCycle.length;
+        const stageIndex = buildingStageCycle[cycleIndex];
+        drawBuildingFrame(preview.canvas, preview.image, stageIndex, preview.frame, preview.display, buildingStageNames[stageIndex]);
+      }
+
+      function makeUnitSection(unit) {
+        const section = document.createElement("section");
+        section.className = "unit-section";
+        section.dataset.race = unit.race;
+        section.innerHTML = `
+          <div class="unit-head">
+            <h3>${unit.label}</h3>
+            <span class="tag">${unit.race} / ${unit.kind}</span>
+          </div>
+          <div class="anim-grid"></div>
+        `;
+        const grid = section.querySelector(".anim-grid");
+        for (const anim of unit.anims) {
+          const meta = animMeta[anim];
+          const card = document.createElement("article");
+          card.className = "anim-card";
+          card.innerHTML = `
+            <div class="anim-title"><span>${anim}</span><span>${meta.frames} frames</span></div>
+            <div class="direction-grid"></div>
+          `;
+          const directionGrid = card.querySelector(".direction-grid");
+          for (const direction of directions) {
+            const wrap = document.createElement("div");
+            wrap.className = "direction";
+            wrap.innerHTML = `<div class="direction-name">${direction}</div>`;
+            const canvas = document.createElement("canvas");
+            canvas.width = unit.kind === "caravan" ? 360 : 260;
+            canvas.height = 240;
+            wrap.append(canvas);
+            directionGrid.append(wrap);
+            previews.push({
+              canvas,
+              direction,
+              frames: meta.frames,
+              frame: unit.frame || [128, 128],
+              display: unit.display,
+              image: imageFor(unitSheet(unit, anim)),
+            });
+          }
+          grid.append(card);
+        }
+        return section;
+      }
+
+      function makeBuildings() {
+        const target = document.querySelector("#buildings");
+        for (const [race, kind, label, frame, display] of buildings) {
+          const card = document.createElement("article");
+          card.className = "building-card";
+          card.dataset.race = race;
+          card.innerHTML = `
+            <h3>${label}</h3>
+            <div class="building-preview"></div>
+            <div class="building-stage-row"></div>
+          `;
+          const previewWrap = card.querySelector(".building-preview");
+          const row = card.querySelector(".building-stage-row");
+          const img = imageFor(`${root}/buildings/${race}/${kind}.png`);
+          const previewCanvas = document.createElement("canvas");
+          previewCanvas.width = 320;
+          previewCanvas.height = 220;
+          previewWrap.append(previewCanvas);
+          buildingPreviews.push({
+            canvas: previewCanvas,
+            image: img,
+            frame,
+            display,
+          });
+          for (let i = 0; i < 5; i += 1) {
+            const stage = document.createElement("div");
+            stage.className = "stage";
+            const canvas = document.createElement("canvas");
+            canvas.width = 142;
+            canvas.height = 126;
+            stage.append(canvas);
+            row.append(stage);
+            const draw = () => drawBuildingFrame(canvas, img, i, frame, display, buildingStageNames[i]);
+            img.addEventListener("load", draw);
+            if (img.complete) draw();
+          }
+          target.append(card);
+        }
+      }
+
+      function makeAssets() {
+        const target = document.querySelector("#assets");
+        for (const [group, label, src] of assets) {
+          const card = document.createElement("article");
+          card.className = "asset-card";
+          card.innerHTML = `<h3>${label}</h3><span class="tag">${group}</span><img alt="${label}" src="${src}" />`;
+          target.append(card);
+        }
+      }
+
+      function applyFilter() {
+        const value = document.querySelector("#raceFilter").value;
+        for (const section of document.querySelectorAll("[data-race]")) {
+          section.style.display = value === "all" || section.dataset.race === value ? "" : "none";
+        }
+      }
+
+      function tick(now) {
+        for (const preview of previews) drawPreview(preview, now);
+        for (const preview of buildingPreviews) drawBuildingPreview(preview, now);
+        requestAnimationFrame(tick);
+      }
+
+      for (const unit of units) document.querySelector("#units").append(makeUnitSection(unit));
+      makeBuildings();
+      makeAssets();
+
+      document.querySelector("#raceFilter").addEventListener("change", applyFilter);
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

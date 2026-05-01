@@ -1,5 +1,15 @@
 import Phaser from 'phaser';
 import { TILE, COLORS, Race, RACE_COLOR, UNIT_KINDS, BUILDING_KINDS, UnitKind, BuildingKind, VIEW_W, VIEW_H } from '../config';
+import {
+  ART_RUNTIME_MANIFEST_KEY,
+  ART_ASSETS,
+  UNIT_SHEET_ASSETS,
+  type ArtAsset,
+  type RuntimeArtManifest,
+  artAssetUrl,
+  resolveEnabledArtAssets,
+  unitAnimKey
+} from '../assets/artManifest';
 
 type G = Phaser.GameObjects.Graphics;
 
@@ -28,7 +38,49 @@ const WOOD_LIGHT = 0xb88148;
 export class BootScene extends Phaser.Scene {
   constructor() { super('BootScene'); }
 
+  preload(): void {
+    this.load.json(ART_RUNTIME_MANIFEST_KEY, artAssetUrl('assets/art/manifest.generated.json'));
+  }
+
   create(): void {
+    const runtime = this.cache.json.get(ART_RUNTIME_MANIFEST_KEY) as RuntimeArtManifest | undefined;
+    const enabledAssets = resolveEnabledArtAssets(runtime);
+    if (enabledAssets.length > 0) {
+      const queued = this.loadArtAssets(enabledAssets);
+      if (queued === 0) {
+        this.createTexturesAndStart();
+        return;
+      }
+      this.load.once(Phaser.Loader.Events.COMPLETE, () => this.createTexturesAndStart());
+      this.load.start();
+      return;
+    }
+    this.createTexturesAndStart();
+  }
+
+  private loadArtAssets(assets: ArtAsset[]): number {
+    const seen = new Set<string>();
+    let queued = 0;
+    for (const asset of assets) {
+      if (seen.has(asset.key)) continue;
+      seen.add(asset.key);
+      if (this.textures.exists(asset.key)) continue;
+      if (asset.type === 'spritesheet') {
+        this.load.spritesheet(asset.key, artAssetUrl(asset.path), {
+          frameWidth: asset.frameWidth,
+          frameHeight: asset.frameHeight,
+          margin: asset.margin ?? 0,
+          spacing: asset.spacing ?? 0
+        });
+      } else {
+        this.load.image(asset.key, artAssetUrl(asset.path));
+      }
+      queued++;
+    }
+    return queued;
+  }
+
+  private createTexturesAndStart(): void {
     this.makeTerrainTiles();
     this.makeWaterFrames();
     this.makeDecals();
@@ -65,7 +117,29 @@ export class BootScene extends Phaser.Scene {
     this.makeSelectionRing('ring_select_m', 18);
     this.makeSelectionRing('ring_select_l', 26);
 
+    this.registerArtAnimations();
     this.scene.start('MenuScene');
+  }
+
+  private registerArtAnimations(): void {
+    const loadedKeys = new Set(ART_ASSETS.filter((asset) => this.textures.exists(asset.key)).map((asset) => asset.key));
+    for (const sheet of UNIT_SHEET_ASSETS) {
+      if (!loadedKeys.has(sheet.key)) continue;
+      for (let row = 0; row < sheet.framesPerFacing * 4; row += sheet.framesPerFacing) {
+        const facing = ['south', 'east', 'north', 'west'][row / sheet.framesPerFacing] as 'south' | 'east' | 'north' | 'west';
+        const key = unitAnimKey(sheet.unitKind, sheet.race, sheet.anim, facing);
+        if (this.anims.exists(key)) continue;
+        this.anims.create({
+          key,
+          frames: this.anims.generateFrameNumbers(sheet.key, {
+            start: row,
+            end: row + sheet.framesPerFacing - 1
+          }),
+          frameRate: sheet.fps,
+          repeat: sheet.repeat
+        });
+      }
+    }
   }
 
   // ---------------- TERRAIN TILES ----------------
@@ -79,6 +153,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeGrassTile(key: string, base: number, light: number, dark: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(base, 1);
     g.fillRect(0, 0, TILE, TILE);
@@ -132,6 +207,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeDirtTile(): void {
+    if (this.textures.exists('tile_dirt')) return;
     const g = this.add.graphics();
     g.fillStyle(COLORS.dirt, 1);
     g.fillRect(0, 0, TILE, TILE);
@@ -165,6 +241,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeForestTile(): void {
+    if (this.textures.exists('tile_forest')) return;
     const g = this.add.graphics();
     // Underlying grass
     g.fillStyle(0x355d2a, 1); g.fillRect(0, 0, TILE, TILE);
@@ -202,6 +279,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeStoneTile(): void {
+    if (this.textures.exists('tile_stone')) return;
     const g = this.add.graphics();
     g.fillStyle(0x54595d, 1);
     g.fillRect(0, 0, TILE, TILE);
@@ -260,6 +338,7 @@ export class BootScene extends Phaser.Scene {
   private makeWaterFrames(): void {
     // 4 phase-shifted water frames for animated cycling
     for (let f = 0; f < 4; f++) {
+      if (this.textures.exists(`tile_water_${f}`)) continue;
       const g = this.add.graphics();
     g.fillStyle(COLORS.water, 1);
       g.fillRect(0, 0, TILE, TILE);
@@ -325,6 +404,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeFlower(key: string, petal: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     const cx = 5, cy = 5;
     // Stem
@@ -343,6 +423,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makePebble(key: string, c: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(0x000000, 0.4); g.fillEllipse(4, 5, 6, 2);
     g.fillStyle(c, 1); g.fillEllipse(4, 4, 5, 3);
@@ -353,6 +434,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeTwig(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.lineStyle(2, WOOD_DARK, 1);
     g.beginPath(); g.moveTo(1, 8); g.lineTo(10, 2); g.strokePath();
@@ -363,6 +445,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeMushroom(key: string, cap: number, stem: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     // Stem
     g.fillStyle(stem, 1);
@@ -384,6 +467,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeGrassTuft(key: string, c: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.lineStyle(1, c, 1);
     g.beginPath();
@@ -411,6 +495,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeTreeTrunk(): void {
+    if (this.textures.exists('tree_trunk')) return;
     const g = this.add.graphics();
     // Shadow
     g.fillStyle(0x000000, 0.45); g.fillEllipse(10, 26, 14, 5);
@@ -431,6 +516,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeTreeCanopy(): void {
+    if (this.textures.exists('tree_canopy')) return;
     const g = this.add.graphics();
     const cx = 18, cy = 18;
     // Shadow
@@ -458,6 +544,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeTreeLegacy(): void {
+    if (this.textures.exists('tree')) return;
     const g = this.add.graphics();
     // Used for resource node sprite (TILE × TILE)
     // Shadow
@@ -482,6 +569,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeGoldMine(): void {
+    if (this.textures.exists('goldmine')) return;
     const S = TILE * 3;
     const g = this.add.graphics();
     const cx = S / 2, cy = S / 2 + 4;
@@ -575,6 +663,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeShadow(key: string, w: number, h: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     // Multi-layered soft ellipse to simulate blur and directional depth
     g.fillStyle(0x06080d, 0.2); g.fillEllipse(w / 2 + 2, h / 2 + 2, w, h);
@@ -598,6 +687,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeWorker(race: Race): void {
+    if (this.textures.exists(`unit_worker_${race}`)) return;
     const W = 32, H = 40;
     const g = this.add.graphics();
     const cx = W / 2;
@@ -713,6 +803,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeFootman(race: Race): void {
+    if (this.textures.exists(`unit_footman_${race}`)) return;
     const W = 36, H = 44;
     const g = this.add.graphics();
     const cx = W / 2;
@@ -853,6 +944,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeArcher(race: Race): void {
+    if (this.textures.exists(`unit_archer_${race}`)) return;
     const W = 34, H = 44;
     const g = this.add.graphics();
     const cx = W / 2;
@@ -965,6 +1057,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeKnight(race: Race): void {
+    if (this.textures.exists(`unit_knight_${race}`)) return;
     const W = 44, H = 44;
     const g = this.add.graphics();
     const cx = W / 2, cyHorse = 28;
@@ -1092,6 +1185,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeCatapult(race: Race): void {
+    if (this.textures.exists(`unit_catapult_${race}`)) return;
     const W = 48, H = 48;
     const g = this.add.graphics();
     const cx = W / 2;
@@ -1213,6 +1307,7 @@ export class BootScene extends Phaser.Scene {
 
   private makeWeapon(kind: UnitKind, race: Race): void {
     const key = `unit_${kind}_${race}_weapon`;
+    if (this.textures.exists(key)) return;
     switch (kind) {
       case 'worker': return this.makeWeaponHammer(key);
       case 'footman': return this.makeWeaponSwordShield(key, race);
@@ -1230,6 +1325,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeWeaponHammer(key: string): void {
+    if (this.textures.exists(key)) return;
     const W = 18, H = 18;
     const g = this.add.graphics();
     // Handle (diagonal)
@@ -1249,6 +1345,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeWeaponSwordShield(key: string, race: Race): void {
+    if (this.textures.exists(key)) return;
     const W = 22, H = 22;
     const g = this.add.graphics();
     const shieldColor = RACE_COLOR[race];
@@ -1299,6 +1396,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeWeaponBow(key: string, race: Race): void {
+    if (this.textures.exists(key)) return;
     const W = 20, H = 22;
     const g = this.add.graphics();
     const limb = race === 'alliance' ? 0x6b4a28 : 0x4a2814;
@@ -1347,6 +1445,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeWeaponLance(key: string, race: Race): void {
+    if (this.textures.exists(key)) return;
     const W = 28, H = 8;
     const g = this.add.graphics();
     const pennant = RACE_COLOR[race];
@@ -1385,6 +1484,7 @@ export class BootScene extends Phaser.Scene {
   // ---------------- BUILDINGS ----------------
 
   private makeBuilding(kind: BuildingKind, race: Race, stage: 'final' | 'stage1' | 'stage2'): void {
+    if (this.textures.exists(this.buildingKey(kind, race, stage))) return;
     switch (kind) {
       case 'townhall': return this.makeTownHall(race, stage);
       case 'farm': return this.makeFarm(race, stage);
@@ -2086,6 +2186,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeBuildingDamaged(kind: BuildingKind, race: Race): void {
+    if (this.textures.exists(`building_${kind}_${race}_damaged`)) return;
     // Damage overlay — cracks and soot (designed to be blended with MULTIPLY)
     const size = this.buildingSize(kind);
     const g = this.add.graphics();
@@ -2137,6 +2238,7 @@ export class BootScene extends Phaser.Scene {
   // ---------------- PROJECTILES ----------------
 
   private makeProjectile(key: string, color: number, dark: number, w: number, r: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     const H = Math.max(6, r * 2 + 4);
     // Shaft
@@ -2162,6 +2264,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeStoneProjectile(key: string): void {
+    if (this.textures.exists(key)) return;
     const W = 14, H = 14;
     const g = this.add.graphics();
     const cx = W / 2, cy = H / 2;
@@ -2184,6 +2287,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeMagicProjectile(key: string, core: number, glow: number): void {
+    if (this.textures.exists(key)) return;
     const W = 14, H = 14;
     const g = this.add.graphics();
     const cx = W / 2, cy = H / 2;
@@ -2225,6 +2329,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeSoftDisc(key: string, diameter: number, color: number, maxAlpha: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     const r = diameter / 2;
     // Enhanced multi-ring soft blur with intense bright core
@@ -2245,6 +2350,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeSpark(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     // Bright star-like spark
     g.fillStyle(0xffffff, 1);
@@ -2262,6 +2368,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeFlame(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     // Teardrop flame
     g.fillStyle(0xff4a1a, 1);
@@ -2279,6 +2386,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeBlood(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(0x5a0a0a, 1);
     g.fillCircle(5, 5, 3.5);
@@ -2293,6 +2401,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeLeaf(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     // Oval leaf with vein
     g.fillStyle(0x2a5a28, 1);
@@ -2306,6 +2415,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeStar(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(0xfff8c8, 1);
     g.fillCircle(6, 6, 2);
@@ -2320,6 +2430,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeEmber(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(0xff3a12, 0.45);
     g.fillCircle(5, 5, 5);
@@ -2332,6 +2443,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeRune(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.lineStyle(1.5, 0x9bd8ff, 0.9);
     g.strokeCircle(6, 6, 4.5);
@@ -2345,6 +2457,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeCrater(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(0x000000, 0);
     g.fillRect(0, 0, 42, 28);
@@ -2363,6 +2476,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeArrowTrail(key: string): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     g.fillStyle(0xfff0b0, 0.15);
     g.fillTriangle(0, 3, 18, 0, 18, 6);
@@ -2375,6 +2489,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeDebris(key: string, color: number, w: number, h: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     // Chunky irregular piece
     g.fillStyle(OUTLINE, 1);
@@ -2393,6 +2508,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeShockwave(key: string): void {
+    if (this.textures.exists(key)) return;
     const D = 48;
     const g = this.add.graphics();
     const r = D / 2;
@@ -2487,6 +2603,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makeCursor(key: string, draw: (g: G) => void, w: number, h: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     draw(g);
     g.generateTexture(key, w, h);
@@ -2496,6 +2613,7 @@ export class BootScene extends Phaser.Scene {
   // ---------------- VIGNETTE ----------------
 
   private makeVignette(): void {
+    if (this.textures.exists('vignette_overlay')) return;
     const W = VIEW_W, H = VIEW_H;
     const g = this.add.graphics();
     // Radial darkening — emulate with many concentric ellipses from outside in
@@ -2516,6 +2634,7 @@ export class BootScene extends Phaser.Scene {
   // ---------------- SELECTION RINGS ----------------
 
   private makeSelectionRing(key: string, r: number): void {
+    if (this.textures.exists(key)) return;
     const g = this.add.graphics();
     const size = (r + 4) * 2;
     const c = size / 2;
@@ -2541,6 +2660,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private makePixel(): void {
+    if (this.textures.exists('pixel')) return;
     const g = this.add.graphics();
     g.fillStyle(0xffffff, 1);
     g.fillRect(0, 0, 2, 2);

@@ -401,6 +401,20 @@
   pointer-events: none;
 }
 
+#menu-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--menu-bg-art);
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
+}
+
+#menu-layer.has-art-bg::before { opacity: 1; }
+
 #menu-layer.visible { opacity: 1; pointer-events: auto; }
 
 #menu-vignette {

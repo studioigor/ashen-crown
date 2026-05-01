@@ -1,0 +1,347 @@
+{
+  "source": "/Users/rejkiavik/Downloads/ChatGPT Image 30 апр. 2026 г., 15_49_59.png",
+  "source_size": [
+    1619,
+    971
+  ],
+  "source_boundaries": {
+    "x": [
+      0,
+      324,
+      648,
+      971,
+      1295,
+      1619
+    ],
+    "y": [
+      0,
+      324,
+      647,
+      971
+    ]
+  },
+  "frame_size": [
+    256,
+    256
+  ],
+  "scale": 0.8735632183908046,
+  "rows": [
+    "south",
+    "east",
+    "north"
+  ],
+  "columns": [
+    "idle",
+    "walk_a",
+    "walk_b",
+    "work_windup",
+    "work_strike"
+  ],
+  "files": {
+    "south_idle": {
+      "file": "frames/south_idle.png",
+      "row": 0,
+      "column": 0,
+      "source_bbox": [
+        85,
+        69,
+        245,
+        282
+      ],
+      "trimmed_size": [
+        160,
+        213
+      ],
+      "normalized_offset": [
+        58,
+        49
+      ]
+    },
+    "south_walk_a": {
+      "file": "frames/south_walk_a.png",
+      "row": 0,
+      "column": 1,
+      "source_bbox": [
+        77,
+        68,
+        243,
+        285
+      ],
+      "trimmed_size": [
+        166,
+        217
+      ],
+      "normalized_offset": [
+        56,
+        45
+      ]
+    },
+    "south_walk_b": {
+      "file": "frames/south_walk_b.png",
+      "row": 0,
+      "column": 2,
+      "source_bbox": [
+        68,
+        69,
+        236,
+        285
+      ],
+      "trimmed_size": [
+        168,
+        216
+      ],
+      "normalized_offset": [
+        54,
+        46
+      ]
+    },
+    "south_work_windup": {
+      "file": "frames/south_work_windup.png",
+      "row": 0,
+      "column": 3,
+      "source_bbox": [
+        72,
+        35,
+        221,
+        284
+      ],
+      "trimmed_size": [
+        149,
+        249
+      ],
+      "normalized_offset": [
+        63,
+        17
+      ]
+    },
+    "south_work_strike": {
+      "file": "frames/south_work_strike.png",
+      "row": 0,
+      "column": 4,
+      "source_bbox": [
+        66,
+        110,
+        219,
+        310
+      ],
+      "trimmed_size": [
+        153,
+        200
+      ],
+      "normalized_offset": [
+        61,
+        60
+      ]
+    },
+    "east_idle": {
+      "file": "frames/east_idle.png",
+      "row": 1,
+      "column": 0,
+      "source_bbox": [
+        115,
+        53,
+        213,
+        270
+      ],
+      "trimmed_size": [
+        98,
+        217
+      ],
+      "normalized_offset": [
+        85,
+        45
+      ]
+    },
+    "east_walk_a": {
+      "file": "frames/east_walk_a.png",
+      "row": 1,
+      "column": 1,
+      "source_bbox": [
+        88,
+        53,
+        242,
+        268
+      ],
+      "trimmed_size": [
+        154,
+        215
+      ],
+      "normalized_offset": [
+        60,
+        47
+      ]
+    },
+    "east_walk_b": {
+      "file": "frames/east_walk_b.png",
+      "row": 1,
+      "column": 2,
+      "source_bbox": [
+        81,
+        53,
+        225,
+        268
+      ],
+      "trimmed_size": [
+        144,
+        215
+      ],
+      "normalized_offset": [
+        65,
+        47
+      ]
+    },
+    "east_work_windup": {
+      "file": "frames/east_work_windup.png",
+      "row": 1,
+      "column": 3,
+      "source_bbox": [
+        91,
+        24,
+        211,
+        285
+      ],
+      "trimmed_size": [
+        120,
+        261
+      ],
+      "normalized_offset": [
+        76,
+        7
+      ]
+    },
+    "east_work_strike": {
+      "file": "frames/east_work_strike.png",
+      "row": 1,
+      "column": 4,
+      "source_bbox": [
+        53,
+        87,
+        254,
+        276
+      ],
+      "trimmed_size": [
+        201,
+        189
+      ],
+      "normalized_offset": [
+        40,
+        70
+      ]
+    },
+    "north_idle": {
+      "file": "frames/north_idle.png",
+      "row": 2,
+      "column": 0,
+      "source_bbox": [
+        102,
+        24,
+        260,
+        247
+      ],
+      "trimmed_size": [
+        158,
+        223
+      ],
+      "normalized_offset": [
+        59,
+        40
+      ]
+    },
+    "north_walk_a": {
+      "file": "frames/north_walk_a.png",
+      "row": 2,
+      "column": 1,
+      "source_bbox": [
+        93,
+        24,
+        248,
+        251
+      ],
+      "trimmed_size": [
+        155,
+        227
+      ],
+      "normalized_offset": [
+        60,
+        37
+      ]
+    },
+    "north_walk_b": {
+      "file": "frames/north_walk_b.png",
+      "row": 2,
+      "column": 2,
+      "source_bbox": [
+        88,
+        24,
+        241,
+        251
+      ],
+      "trimmed_size": [
+        153,
+        227
+      ],
+      "normalized_offset": [
+        61,
+        37
+      ]
+    },
+    "north_work_windup": {
+      "file": "frames/north_work_windup.png",
+      "row": 2,
+      "column": 3,
+      "source_bbox": [
+        77,
+        0,
+        218,
+        256
+      ],
+      "trimmed_size": [
+        141,
+        256
+      ],
+      "normalized_offset": [
+        66,
+        11
+      ]
+    },
+    "north_work_strike": {
+      "file": "frames/north_work_strike.png",
+      "row": 2,
+      "column": 4,
+      "source_bbox": [
+        62,
+        59,
+        230,
+        260
+      ],
+      "trimmed_size": [
+        168,
+        201
+      ],
+      "normalized_offset": [
+        54,
+        59
+      ]
+    },
+    "west_idle": {
+      "file": "frames/west_idle.png",
+      "mirrored_from": "east_idle"
+    },
+    "west_walk_a": {
+      "file": "frames/west_walk_a.png",
+      "mirrored_from": "east_walk_a"
+    },
+    "west_walk_b": {
+      "file": "frames/west_walk_b.png",
+      "mirrored_from": "east_walk_b"
+    },
+    "west_work_windup": {
+      "file": "frames/west_work_windup.png",
+      "mirrored_from": "east_work_windup"
+    },
+    "west_work_strike": {
+      "file": "frames/west_work_strike.png",
+      "mirrored_from": "east_work_strike"
+    }
+  }
+}

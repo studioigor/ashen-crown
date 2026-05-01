@@ -1,6 +1,15 @@
 import Phaser from 'phaser';
 import { IEntity, newEntityId, HealthBar } from './Entity';
 import { Side, BUILDING, BuildingKind, RACE_COLOR, TILE, UnitKind, UNIT, Race } from '../config';
+import {
+  BUILDING_ART_DISPLAY,
+  buildingArtReady,
+  buildingDamageKey,
+  buildingDestructionKey,
+  buildingSheetKey,
+  getBuildingStageFrame,
+  legacyBuildingStageKey
+} from '../assets/artManifest';
 
 export interface ProductionItem {
   kind: UnitKind;
@@ -9,6 +18,7 @@ export interface ProductionItem {
 }
 
 type Stage = 'stage1' | 'stage2' | 'final';
+type ArtStage = Stage | 'destroying' | 'ruin';
 
 export class Building implements IEntity {
   readonly id = newEntityId();
@@ -69,13 +79,22 @@ export class Building implements IEntity {
     const cy = ty * TILE + (this.sizeTiles * TILE) / 2;
 
     this.currentStage = instant ? 'final' : 'stage1';
-    this.sprite = scene.add.sprite(cx, cy, this.stageKey('stage1'));
-    if (instant) this.sprite.setTexture(this.stageKey('final'));
+    const initialTexture = this.stageTexture(scene, 'stage1');
+    this.sprite = scene.add.sprite(cx, cy, initialTexture.key, initialTexture.frame);
+    this.applyArtDisplaySize(scene);
+    if (instant) this.setStageTexture('final');
     this.sprite.setDepth(20);
     this.sprite.setData('entity', this);
     this.radius = (this.sizeTiles * TILE) / 2;
 
-    this.damageOverlay = scene.add.image(cx, cy, `building_${kind}_${race}_damaged`);
+    const damageKey = scene.textures.exists(buildingDamageKey(kind, race))
+      ? buildingDamageKey(kind, race)
+      : `building_${kind}_${race}_damaged`;
+    this.damageOverlay = scene.add.image(cx, cy, damageKey);
+    if (buildingArtReady(scene, kind, race)) {
+      const display = BUILDING_ART_DISPLAY[kind];
+      this.damageOverlay.setDisplaySize(display.width, display.height);
+    }
     this.damageOverlay.setDepth(21);
     this.damageOverlay.setAlpha(0);
     this.damageOverlay.setBlendMode(Phaser.BlendModes.MULTIPLY);
@@ -102,8 +121,27 @@ export class Building implements IEntity {
   }
 
   private stageKey(stage: Stage): string {
-    if (stage === 'final') return `building_${this.buildingKind}_${this.race}`;
-    return `building_${this.buildingKind}_${this.race}_${stage}`;
+    return legacyBuildingStageKey(this.buildingKind, this.race, stage);
+  }
+
+  private stageTexture(scene: Phaser.Scene, stage: ArtStage): { key: string; frame?: number } {
+    if (buildingArtReady(scene, this.buildingKind, this.race)) {
+      return { key: buildingSheetKey(this.buildingKind, this.race), frame: getBuildingStageFrame(stage) };
+    }
+    if (stage === 'destroying' || stage === 'ruin') return { key: this.stageKey('final') };
+    return { key: this.stageKey(stage) };
+  }
+
+  private setStageTexture(stage: ArtStage): void {
+    const tex = this.stageTexture(this.sprite.scene, stage);
+    this.sprite.setTexture(tex.key, tex.frame);
+    this.applyArtDisplaySize(this.sprite.scene);
+  }
+
+  private applyArtDisplaySize(scene: Phaser.Scene): void {
+    if (!buildingArtReady(scene, this.buildingKind, this.race)) return;
+    const display = BUILDING_ART_DISPLAY[this.buildingKind];
+    this.sprite.setDisplaySize(display.width, display.height);
   }
 
   private maybeStartChimney(): void {
@@ -195,7 +233,7 @@ export class Building implements IEntity {
         alpha: { from: 1, to: 0.3 },
         duration: 120,
         yoyo: true,
-        onYoyo: () => this.sprite.setTexture(this.stageKey(nextStage))
+        onYoyo: () => this.setStageTexture(nextStage)
       });
     }
     this.hb.update();
@@ -204,7 +242,7 @@ export class Building implements IEntity {
       this.completed = true;
       this.hp = this.maxHp;
       this.currentStage = 'final';
-      this.sprite.setTexture(this.stageKey('final'));
+      this.setStageTexture('final');
       this.sprite.setAlpha(1);
       // Stop construction dust
       if (this.constructionDust) {
@@ -250,6 +288,16 @@ export class Building implements IEntity {
     const hpFrac = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
     if (hpFrac < 0.75) {
       const dmgAlpha = Phaser.Math.Clamp((0.75 - hpFrac) * 1.4, 0, 0.9);
+      const lightDamageKey = buildingDamageKey(this.buildingKind, this.race);
+      const heavyDamageKey = buildingDestructionKey(this.buildingKind, this.race);
+      const desiredDamageKey = hpFrac < 0.35 && this.sprite.scene.textures.exists(heavyDamageKey) ? heavyDamageKey : lightDamageKey;
+      if (this.sprite.scene.textures.exists(desiredDamageKey) && this.damageOverlay.texture.key !== desiredDamageKey) {
+        this.damageOverlay.setTexture(desiredDamageKey);
+        if (buildingArtReady(this.sprite.scene, this.buildingKind, this.race)) {
+          const display = BUILDING_ART_DISPLAY[this.buildingKind];
+          this.damageOverlay.setDisplaySize(display.width, display.height);
+        }
+      }
       this.damageOverlay.setAlpha(dmgAlpha);
     } else {
       this.damageOverlay.setAlpha(0);
@@ -262,6 +310,32 @@ export class Building implements IEntity {
     if (!this.alive) return;
     this.alive = false;
     const scene = this.sprite.scene;
+    if (buildingArtReady(scene, this.buildingKind, this.race)) {
+      this.damageOverlay.setAlpha(0);
+      this.setStageTexture('destroying');
+      scene.time.delayedCall(180, () => {
+        if (!this.sprite.active) return;
+        this.setStageTexture('ruin');
+        this.sprite.setAlpha(0.95);
+        scene.tweens.add({
+          targets: this.sprite,
+          alpha: { from: 0.95, to: 0 },
+          duration: 900,
+          delay: 2600,
+          ease: 'Cubic.easeIn',
+          onComplete: () => {
+            this.sprite.destroy();
+            this.damageOverlay.destroy();
+          }
+        });
+      });
+      this.flag.destroy();
+      this.productionGlow.destroy();
+      if (this.chimneySmoke) { this.chimneySmoke.stop(); this.chimneySmoke = null; }
+      if (this.constructionDust) { this.constructionDust.stop(); this.constructionDust = null; }
+      this.hb.destroy();
+      return;
+    }
     // Settle-fade for visuals
     scene.tweens.add({
       targets: this.sprite,

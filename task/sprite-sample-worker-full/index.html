@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ashen Crown Worker Full Pose Sample</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #151814;
+        --panel: #22271f;
+        --line: #4a533f;
+        --text: #eee7d5;
+        --muted: #bdb496;
+        --accent: #d8ab52;
+        --grass-a: #5d7338;
+        --grass-b: #435a2c;
+        --sprite-size: 96px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 24% 0%, rgba(216, 171, 82, 0.14), transparent 34rem),
+          linear-gradient(180deg, #181b15 0%, var(--bg) 100%);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      main {
+        width: min(1240px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 26px 0 42px;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 20px;
+        margin-bottom: 22px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 24px;
+        line-height: 1.15;
+        font-weight: 760;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        color: var(--accent);
+        font-size: 15px;
+        line-height: 1.2;
+        font-weight: 720;
+      }
+
+      .subhead {
+        max-width: 760px;
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 12px;
+        padding: 12px;
+        background: rgba(34, 39, 31, 0.9);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      label {
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      input[type="range"] {
+        width: 132px;
+        accent-color: var(--accent);
+      }
+
+      section {
+        margin-top: 22px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .duo-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        min-height: 174px;
+        padding: 12px;
+        background: rgba(34, 39, 31, 0.93);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .card-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .stage {
+        position: relative;
+        height: 132px;
+        display: grid;
+        place-items: end center;
+        margin-top: 10px;
+        overflow: hidden;
+        border-radius: 6px;
+        background:
+          linear-gradient(30deg, rgba(255, 255, 255, 0.045) 12%, transparent 12% 50%, rgba(255, 255, 255, 0.045) 50% 62%, transparent 62%),
+          linear-gradient(150deg, rgba(0, 0, 0, 0.08) 12%, transparent 12% 50%, rgba(0, 0, 0, 0.08) 50% 62%, transparent 62%),
+          linear-gradient(180deg, var(--grass-a), var(--grass-b));
+        background-size: 28px 28px, 28px 28px, 100% 100%;
+      }
+
+      .shadow {
+        position: absolute;
+        left: 50%;
+        bottom: 18px;
+        width: calc(var(--sprite-size) * 0.46);
+        height: calc(var(--sprite-size) * 0.13);
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.34);
+        filter: blur(2px);
+      }
+
+      .sprite {
+        position: relative;
+        z-index: 1;
+        width: var(--sprite-size);
+        height: var(--sprite-size);
+        object-fit: contain;
+        object-position: center bottom;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      .field {
+        position: relative;
+        min-height: 420px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          radial-gradient(circle at 26% 28%, rgba(216, 171, 82, 0.2), transparent 7rem),
+          radial-gradient(circle at 78% 66%, rgba(54, 87, 46, 0.9), transparent 11rem),
+          linear-gradient(30deg, rgba(255, 255, 255, 0.055) 12%, transparent 12% 50%, rgba(255, 255, 255, 0.055) 50% 62%, transparent 62%),
+          linear-gradient(150deg, rgba(0, 0, 0, 0.08) 12%, transparent 12% 50%, rgba(0, 0, 0, 0.08) 50% 62%, transparent 62%),
+          linear-gradient(180deg, #63783d 0%, #405629 100%);
+        background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px, 100% 100%;
+      }
+
+      .runner {
+        position: absolute;
+        width: var(--sprite-size);
+        height: var(--sprite-size);
+        display: grid;
+        place-items: end center;
+      }
+
+      .runner::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 8px;
+        width: calc(var(--sprite-size) * 0.42);
+        height: calc(var(--sprite-size) * 0.12);
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.34);
+        filter: blur(2px);
+      }
+
+      .runner.south {
+        left: 48%;
+        top: -76px;
+        animation: moveSouth 6s linear infinite;
+      }
+
+      .runner.north {
+        left: 36%;
+        bottom: -72px;
+        animation: moveNorth 6s linear infinite;
+      }
+
+      .runner.east {
+        left: -76px;
+        top: 46%;
+        animation: moveEast 6s linear infinite;
+      }
+
+      .runner.west {
+        right: -76px;
+        top: 25%;
+        animation: moveWest 6s linear infinite;
+      }
+
+      @keyframes moveSouth {
+        from {
+          transform: translateY(-40px);
+        }
+        to {
+          transform: translateY(550px);
+        }
+      }
+
+      @keyframes moveNorth {
+        from {
+          transform: translateY(40px);
+        }
+        to {
+          transform: translateY(-550px);
+        }
+      }
+
+      @keyframes moveEast {
+        from {
+          transform: translateX(-40px);
+        }
+        to {
+          transform: translateX(1320px);
+        }
+      }
+
+      @keyframes moveWest {
+        from {
+          transform: translateX(40px);
+        }
+        to {
+          transform: translateX(-1320px);
+        }
+      }
+
+      .source-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .image-panel {
+        padding: 12px;
+        background: rgba(34, 39, 31, 0.93);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .image-panel img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 6px;
+        background: #111;
+      }
+
+      @media (max-width: 940px) {
+        header {
+          display: grid;
+          align-items: start;
+        }
+
+        .grid,
+        .duo-grid,
+        .source-row {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 560px) {
+        main {
+          width: min(100vw - 20px, 1240px);
+          padding-top: 18px;
+        }
+
+        .grid,
+        .duo-grid,
+        .source-row,
+        .controls {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Ashen Crown worker full pose sample</h1>
+          <p class="subhead">
+            Полный pose sheet из GPT Image: idle, walk, work, attack, death. Кадры
+            найдены по силуэтам на зеленом фоне, west сделан зеркалом east, анимации
+            собраны кодом без подключения к игре.
+          </p>
+        </div>
+        <div class="controls">
+          <label>
+            Size
+            <input id="size" type="range" min="64" max="156" value="96" />
+          </label>
+          <label>
+            FPS
+            <input id="fps" type="range" min="3" max="12" value="7" />
+          </label>
+        </div>
+      </header>
+
+      <section>
+        <h2>Walk Loop</h2>
+        <div class="grid" id="walkGrid"></div>
+      </section>
+
+      <section>
+        <h2>Work Loop</h2>
+        <div class="grid" id="workGrid"></div>
+      </section>
+
+      <section>
+        <h2>Attack Loop</h2>
+        <div class="grid" id="attackGrid"></div>
+      </section>
+
+      <section>
+        <h2>Death Sequence</h2>
+        <div class="grid" id="deathGrid"></div>
+      </section>
+
+      <section>
+        <h2>RTS Scale Test</h2>
+        <div class="field" id="field"></div>
+      </section>
+
+      <section>
+        <h2>Source And Normalized Atlas</h2>
+        <div class="source-row">
+          <div class="image-panel">
+            <img src="source-worker-full.png" alt="Original GPT Image full worker pose sheet" />
+          </div>
+          <div class="image-panel">
+            <img src="worker_full_pose_atlas.png" alt="Normalized transparent worker pose atlas" />
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const directions = ["south", "east", "north", "west"];
+      const labels = {
+        south: "south",
+        east: "east",
+        north: "north",
+        west: "west mirrored",
+      };
+
+      const sequences = {
+        idle: (direction) => [`frames/${direction}_idle.png`],
+        walk: (direction) => [
+          `frames/${direction}_walk_a.png`,
+          `frames/${direction}_idle.png`,
+          `frames/${direction}_walk_b.png`,
+          `frames/${direction}_idle.png`,
+        ],
+        work: (direction) => [
+          `frames/${direction}_work_windup.png`,
+          `frames/${direction}_work_strike.png`,
+          `frames/${direction}_work_windup.png`,
+          `frames/${direction}_idle.png`,
+        ],
+        attack: (direction) => [
+          `frames/${direction}_attack_windup.png`,
+          `frames/${direction}_attack_strike.png`,
+          `frames/${direction}_idle.png`,
+        ],
+        death: (direction) => [
+          `frames/${direction}_idle.png`,
+          `frames/${direction}_death_fall.png`,
+          `frames/${direction}_corpse.png`,
+          `frames/${direction}_corpse.png`,
+          `frames/${direction}_corpse.png`,
+          `frames/${direction}_corpse.png`,
+        ],
+      };
+
+      const activeSprites = [];
+      const root = document.documentElement;
+      const fpsInput = document.querySelector("#fps");
+      const sizeInput = document.querySelector("#size");
+
+      function makeSprite(direction, sequenceName, title) {
+        const card = document.createElement("article");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="card-title"><span>${title}</span><span>${labels[direction]}</span></div>
+          <div class="stage">
+            <div class="shadow"></div>
+            <img class="sprite" alt="${title} ${direction}" />
+          </div>
+        `;
+
+        const image = card.querySelector("img");
+        const frames = sequences[sequenceName](direction);
+        activeSprites.push({ image, frames, frame: 0, last: 0 });
+        image.src = frames[0];
+        return card;
+      }
+
+      function makeRunner(direction) {
+        const runner = document.createElement("div");
+        runner.className = `runner ${direction}`;
+        const image = document.createElement("img");
+        image.className = "sprite";
+        image.alt = `moving ${direction}`;
+        runner.append(image);
+        const frames = sequences.walk(direction);
+        activeSprites.push({ image, frames, frame: 0, last: 0 });
+        image.src = frames[0];
+        return runner;
+      }
+
+      function build() {
+        const walkGrid = document.querySelector("#walkGrid");
+        const workGrid = document.querySelector("#workGrid");
+        const attackGrid = document.querySelector("#attackGrid");
+        const deathGrid = document.querySelector("#deathGrid");
+        const field = document.querySelector("#field");
+
+        for (const direction of directions) {
+          walkGrid.append(makeSprite(direction, "walk", "walk"));
+          workGrid.append(makeSprite(direction, "work", "work"));
+          attackGrid.append(makeSprite(direction, "attack", "attack"));
+          deathGrid.append(makeSprite(direction, "death", "death"));
+          field.append(makeRunner(direction));
+        }
+      }
+
+      function tick(now) {
+        const fps = Number(fpsInput.value);
+        const interval = 1000 / fps;
+
+        for (const sprite of activeSprites) {
+          if (now - sprite.last < interval) continue;
+          sprite.last = now;
+          sprite.frame = (sprite.frame + 1) % sprite.frames.length;
+          sprite.image.src = sprite.frames[sprite.frame];
+        }
+
+        requestAnimationFrame(tick);
+      }
+
+      sizeInput.addEventListener("input", () => {
+        root.style.setProperty("--sprite-size", `${sizeInput.value}px`);
+      });
+
+      build();
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

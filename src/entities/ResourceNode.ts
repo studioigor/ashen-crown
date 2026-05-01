@@ -72,6 +72,7 @@ export class ResourceNode implements IEntity {
     const got = Math.min(n, this.amount);
     this.amount -= got;
     this.hp = this.amount;
+    this.updateResourceTexture();
     this.hb.update();
     if (this.amount <= 0) this.destroy();
     return got;
@@ -79,10 +80,47 @@ export class ResourceNode implements IEntity {
 
   takeDamage(): void { /* invulnerable */ }
 
+  private updateResourceTexture(): void {
+    if (this.resourceType !== 'gold') return;
+    const frac = this.amount / this.maxHp;
+    const key = frac < 0.32 ? 'goldmine_depleted' : frac < 0.62 ? 'goldmine_damaged' : 'goldmine';
+    if (this.sprite.scene.textures.exists(key) && this.sprite.texture.key !== key) {
+      this.sprite.setTexture(key);
+    }
+  }
+
   destroy(): void {
     if (!this.alive) return;
     this.alive = false;
-    this.sprite.destroy();
     this.hb.destroy();
+    const scene = this.sprite.scene;
+    if (this.resourceType === 'gold' && scene.textures.exists('goldmine_depleted')) {
+      this.sprite.setTexture('goldmine_depleted');
+      this.sprite.setData('entity', null);
+      scene.tweens.add({
+        targets: this.sprite,
+        alpha: 0,
+        duration: 900,
+        delay: 6500,
+        ease: 'Cubic.easeIn',
+        onComplete: () => this.sprite.destroy()
+      });
+      return;
+    }
+    if (this.resourceType === 'lumber' && scene.textures.exists('tree_stump')) {
+      this.sprite.setTexture('tree_stump');
+      this.sprite.setOrigin(0.5, 0.8);
+      this.sprite.setData('entity', null);
+      scene.tweens.add({
+        targets: this.sprite,
+        alpha: 0,
+        duration: 700,
+        delay: 4500,
+        ease: 'Cubic.easeIn',
+        onComplete: () => this.sprite.destroy()
+      });
+      return;
+    }
+    this.sprite.destroy();
   }
 }

@@ -1,0 +1,850 @@
+{
+  "source": "/Users/rejkiavik/Downloads/ChatGPT Image 30 апр. 2026 г., 17_11_19.png",
+  "source_size": [
+    1672,
+    941
+  ],
+  "frame_size": [
+    256,
+    256
+  ],
+  "scale": 1.0,
+  "detection": "chroma-key connected components grouped into 3 rows x 9 columns",
+  "rows": [
+    "south",
+    "east",
+    "north"
+  ],
+  "columns": [
+    "idle",
+    "walk_a",
+    "walk_b",
+    "work_windup",
+    "work_strike",
+    "attack_windup",
+    "attack_strike",
+    "death_fall",
+    "corpse"
+  ],
+  "files": {
+    "south_idle": {
+      "file": "frames/south_idle.png",
+      "row": 0,
+      "column": 0,
+      "source_bbox": [
+        48,
+        115,
+        178,
+        305
+      ],
+      "component_bbox": [
+        52,
+        119,
+        174,
+        301
+      ],
+      "component_center": [
+        113.0,
+        210.0
+      ],
+      "trimmed_size": [
+        122,
+        182
+      ],
+      "normalized_offset": [
+        67,
+        56
+      ]
+    },
+    "south_walk_a": {
+      "file": "frames/south_walk_a.png",
+      "row": 0,
+      "column": 1,
+      "source_bbox": [
+        230,
+        117,
+        353,
+        305
+      ],
+      "component_bbox": [
+        234,
+        121,
+        349,
+        301
+      ],
+      "component_center": [
+        291.5,
+        211.0
+      ],
+      "trimmed_size": [
+        115,
+        180
+      ],
+      "normalized_offset": [
+        70,
+        58
+      ]
+    },
+    "south_walk_b": {
+      "file": "frames/south_walk_b.png",
+      "row": 0,
+      "column": 2,
+      "source_bbox": [
+        401,
+        117,
+        524,
+        305
+      ],
+      "component_bbox": [
+        405,
+        121,
+        520,
+        301
+      ],
+      "component_center": [
+        462.5,
+        211.0
+      ],
+      "trimmed_size": [
+        115,
+        180
+      ],
+      "normalized_offset": [
+        70,
+        58
+      ]
+    },
+    "south_work_windup": {
+      "file": "frames/south_work_windup.png",
+      "row": 0,
+      "column": 3,
+      "source_bbox": [
+        581,
+        88,
+        704,
+        305
+      ],
+      "component_bbox": [
+        585,
+        92,
+        700,
+        301
+      ],
+      "component_center": [
+        642.5,
+        196.5
+      ],
+      "trimmed_size": [
+        115,
+        209
+      ],
+      "normalized_offset": [
+        70,
+        29
+      ]
+    },
+    "south_work_strike": {
+      "file": "frames/south_work_strike.png",
+      "row": 0,
+      "column": 4,
+      "source_bbox": [
+        745,
+        167,
+        908,
+        325
+      ],
+      "component_bbox": [
+        749,
+        171,
+        904,
+        321
+      ],
+      "component_center": [
+        826.5,
+        246.0
+      ],
+      "trimmed_size": [
+        155,
+        150
+      ],
+      "normalized_offset": [
+        50,
+        88
+      ]
+    },
+    "south_attack_windup": {
+      "file": "frames/south_attack_windup.png",
+      "row": 0,
+      "column": 5,
+      "source_bbox": [
+        937,
+        110,
+        1057,
+        306
+      ],
+      "component_bbox": [
+        941,
+        114,
+        1053,
+        302
+      ],
+      "component_center": [
+        997.0,
+        208.0
+      ],
+      "trimmed_size": [
+        112,
+        188
+      ],
+      "normalized_offset": [
+        72,
+        50
+      ]
+    },
+    "south_attack_strike": {
+      "file": "frames/south_attack_strike.png",
+      "row": 0,
+      "column": 6,
+      "source_bbox": [
+        1101,
+        120,
+        1234,
+        308
+      ],
+      "component_bbox": [
+        1105,
+        124,
+        1230,
+        304
+      ],
+      "component_center": [
+        1167.5,
+        214.0
+      ],
+      "trimmed_size": [
+        125,
+        180
+      ],
+      "normalized_offset": [
+        66,
+        58
+      ]
+    },
+    "south_death_fall": {
+      "file": "frames/south_death_fall.png",
+      "row": 0,
+      "column": 7,
+      "source_bbox": [
+        1259,
+        171,
+        1421,
+        315
+      ],
+      "component_bbox": [
+        1263,
+        175,
+        1417,
+        311
+      ],
+      "component_center": [
+        1340.0,
+        243.0
+      ],
+      "trimmed_size": [
+        154,
+        136
+      ],
+      "normalized_offset": [
+        51,
+        110
+      ]
+    },
+    "south_corpse": {
+      "file": "frames/south_corpse.png",
+      "row": 0,
+      "column": 8,
+      "source_bbox": [
+        1446,
+        227,
+        1642,
+        322
+      ],
+      "component_bbox": [
+        1450,
+        231,
+        1638,
+        318
+      ],
+      "component_center": [
+        1544.0,
+        274.5
+      ],
+      "trimmed_size": [
+        188,
+        87
+      ],
+      "normalized_offset": [
+        34,
+        159
+      ]
+    },
+    "east_idle": {
+      "file": "frames/east_idle.png",
+      "row": 1,
+      "column": 0,
+      "source_bbox": [
+        63,
+        367,
+        162,
+        559
+      ],
+      "component_bbox": [
+        67,
+        371,
+        158,
+        555
+      ],
+      "component_center": [
+        112.5,
+        463.0
+      ],
+      "trimmed_size": [
+        91,
+        184
+      ],
+      "normalized_offset": [
+        82,
+        54
+      ]
+    },
+    "east_walk_a": {
+      "file": "frames/east_walk_a.png",
+      "row": 1,
+      "column": 1,
+      "source_bbox": [
+        233,
+        369,
+        341,
+        553
+      ],
+      "component_bbox": [
+        237,
+        373,
+        337,
+        549
+      ],
+      "component_center": [
+        287.0,
+        461.0
+      ],
+      "trimmed_size": [
+        100,
+        176
+      ],
+      "normalized_offset": [
+        78,
+        62
+      ]
+    },
+    "east_walk_b": {
+      "file": "frames/east_walk_b.png",
+      "row": 1,
+      "column": 2,
+      "source_bbox": [
+        399,
+        369,
+        515,
+        552
+      ],
+      "component_bbox": [
+        403,
+        373,
+        511,
+        548
+      ],
+      "component_center": [
+        457.0,
+        460.5
+      ],
+      "trimmed_size": [
+        108,
+        175
+      ],
+      "normalized_offset": [
+        74,
+        63
+      ]
+    },
+    "east_work_windup": {
+      "file": "frames/east_work_windup.png",
+      "row": 1,
+      "column": 3,
+      "source_bbox": [
+        589,
+        358,
+        699,
+        563
+      ],
+      "component_bbox": [
+        593,
+        362,
+        695,
+        559
+      ],
+      "component_center": [
+        644.0,
+        460.5
+      ],
+      "trimmed_size": [
+        102,
+        197
+      ],
+      "normalized_offset": [
+        77,
+        41
+      ]
+    },
+    "east_work_strike": {
+      "file": "frames/east_work_strike.png",
+      "row": 1,
+      "column": 4,
+      "source_bbox": [
+        742,
+        408,
+        934,
+        557
+      ],
+      "component_bbox": [
+        746,
+        412,
+        930,
+        553
+      ],
+      "component_center": [
+        838.0,
+        482.5
+      ],
+      "trimmed_size": [
+        184,
+        141
+      ],
+      "normalized_offset": [
+        36,
+        97
+      ]
+    },
+    "east_attack_windup": {
+      "file": "frames/east_attack_windup.png",
+      "row": 1,
+      "column": 5,
+      "source_bbox": [
+        945,
+        372,
+        1062,
+        560
+      ],
+      "component_bbox": [
+        949,
+        376,
+        1058,
+        556
+      ],
+      "component_center": [
+        1003.5,
+        466.0
+      ],
+      "trimmed_size": [
+        109,
+        180
+      ],
+      "normalized_offset": [
+        74,
+        58
+      ]
+    },
+    "east_attack_strike": {
+      "file": "frames/east_attack_strike.png",
+      "row": 1,
+      "column": 6,
+      "source_bbox": [
+        1099,
+        372,
+        1264,
+        559
+      ],
+      "component_bbox": [
+        1103,
+        376,
+        1260,
+        555
+      ],
+      "component_center": [
+        1181.5,
+        465.5
+      ],
+      "trimmed_size": [
+        157,
+        179
+      ],
+      "normalized_offset": [
+        50,
+        59
+      ]
+    },
+    "east_death_fall": {
+      "file": "frames/east_death_fall.png",
+      "row": 1,
+      "column": 7,
+      "source_bbox": [
+        1278,
+        417,
+        1412,
+        557
+      ],
+      "component_bbox": [
+        1282,
+        421,
+        1408,
+        553
+      ],
+      "component_center": [
+        1345.0,
+        487.0
+      ],
+      "trimmed_size": [
+        126,
+        132
+      ],
+      "normalized_offset": [
+        65,
+        114
+      ]
+    },
+    "east_corpse": {
+      "file": "frames/east_corpse.png",
+      "row": 1,
+      "column": 8,
+      "source_bbox": [
+        1444,
+        480,
+        1644,
+        563
+      ],
+      "component_bbox": [
+        1448,
+        484,
+        1640,
+        559
+      ],
+      "component_center": [
+        1544.0,
+        521.5
+      ],
+      "trimmed_size": [
+        192,
+        75
+      ],
+      "normalized_offset": [
+        32,
+        171
+      ]
+    },
+    "north_idle": {
+      "file": "frames/north_idle.png",
+      "row": 2,
+      "column": 0,
+      "source_bbox": [
+        46,
+        629,
+        172,
+        829
+      ],
+      "component_bbox": [
+        50,
+        633,
+        168,
+        825
+      ],
+      "component_center": [
+        109.0,
+        729.0
+      ],
+      "trimmed_size": [
+        118,
+        192
+      ],
+      "normalized_offset": [
+        69,
+        46
+      ]
+    },
+    "north_walk_a": {
+      "file": "frames/north_walk_a.png",
+      "row": 2,
+      "column": 1,
+      "source_bbox": [
+        223,
+        633,
+        355,
+        831
+      ],
+      "component_bbox": [
+        227,
+        637,
+        351,
+        827
+      ],
+      "component_center": [
+        289.0,
+        732.0
+      ],
+      "trimmed_size": [
+        124,
+        190
+      ],
+      "normalized_offset": [
+        66,
+        48
+      ]
+    },
+    "north_walk_b": {
+      "file": "frames/north_walk_b.png",
+      "row": 2,
+      "column": 2,
+      "source_bbox": [
+        397,
+        633,
+        529,
+        827
+      ],
+      "component_bbox": [
+        401,
+        637,
+        525,
+        823
+      ],
+      "component_center": [
+        463.0,
+        730.0
+      ],
+      "trimmed_size": [
+        124,
+        186
+      ],
+      "normalized_offset": [
+        66,
+        52
+      ]
+    },
+    "north_work_windup": {
+      "file": "frames/north_work_windup.png",
+      "row": 2,
+      "column": 3,
+      "source_bbox": [
+        570,
+        604,
+        697,
+        829
+      ],
+      "component_bbox": [
+        574,
+        608,
+        693,
+        825
+      ],
+      "component_center": [
+        633.5,
+        716.5
+      ],
+      "trimmed_size": [
+        119,
+        217
+      ],
+      "normalized_offset": [
+        68,
+        21
+      ]
+    },
+    "north_work_strike": {
+      "file": "frames/north_work_strike.png",
+      "row": 2,
+      "column": 4,
+      "source_bbox": [
+        734,
+        674,
+        889,
+        833
+      ],
+      "component_bbox": [
+        738,
+        678,
+        885,
+        829
+      ],
+      "component_center": [
+        811.5,
+        753.5
+      ],
+      "trimmed_size": [
+        147,
+        151
+      ],
+      "normalized_offset": [
+        54,
+        87
+      ]
+    },
+    "north_attack_windup": {
+      "file": "frames/north_attack_windup.png",
+      "row": 2,
+      "column": 5,
+      "source_bbox": [
+        937,
+        632,
+        1055,
+        833
+      ],
+      "component_bbox": [
+        941,
+        636,
+        1051,
+        829
+      ],
+      "component_center": [
+        996.0,
+        732.5
+      ],
+      "trimmed_size": [
+        110,
+        193
+      ],
+      "normalized_offset": [
+        73,
+        45
+      ]
+    },
+    "north_attack_strike": {
+      "file": "frames/north_attack_strike.png",
+      "row": 2,
+      "column": 6,
+      "source_bbox": [
+        1101,
+        632,
+        1235,
+        832
+      ],
+      "component_bbox": [
+        1105,
+        636,
+        1231,
+        828
+      ],
+      "component_center": [
+        1168.0,
+        732.0
+      ],
+      "trimmed_size": [
+        126,
+        192
+      ],
+      "normalized_offset": [
+        65,
+        46
+      ]
+    },
+    "north_death_fall": {
+      "file": "frames/north_death_fall.png",
+      "row": 2,
+      "column": 7,
+      "source_bbox": [
+        1265,
+        684,
+        1416,
+        821
+      ],
+      "component_bbox": [
+        1269,
+        688,
+        1412,
+        817
+      ],
+      "component_center": [
+        1340.5,
+        752.5
+      ],
+      "trimmed_size": [
+        143,
+        129
+      ],
+      "normalized_offset": [
+        56,
+        117
+      ]
+    },
+    "north_corpse": {
+      "file": "frames/north_corpse.png",
+      "row": 2,
+      "column": 8,
+      "source_bbox": [
+        1446,
+        757,
+        1642,
+        837
+      ],
+      "component_bbox": [
+        1450,
+        761,
+        1638,
+        833
+      ],
+      "component_center": [
+        1544.0,
+        797.0
+      ],
+      "trimmed_size": [
+        188,
+        72
+      ],
+      "normalized_offset": [
+        34,
+        174
+      ]
+    },
+    "west_idle": {
+      "file": "frames/west_idle.png",
+      "mirrored_from": "east_idle"
+    },
+    "west_walk_a": {
+      "file": "frames/west_walk_a.png",
+      "mirrored_from": "east_walk_a"
+    },
+    "west_walk_b": {
+      "file": "frames/west_walk_b.png",
+      "mirrored_from": "east_walk_b"
+    },
+    "west_work_windup": {
+      "file": "frames/west_work_windup.png",
+      "mirrored_from": "east_work_windup"
+    },
+    "west_work_strike": {
+      "file": "frames/west_work_strike.png",
+      "mirrored_from": "east_work_strike"
+    },
+    "west_attack_windup": {
+      "file": "frames/west_attack_windup.png",
+      "mirrored_from": "east_attack_windup"
+    },
+    "west_attack_strike": {
+      "file": "frames/west_attack_strike.png",
+      "mirrored_from": "east_attack_strike"
+    },
+    "west_death_fall": {
+      "file": "frames/west_death_fall.png",
+      "mirrored_from": "east_death_fall"
+    },
+    "west_corpse": {
+      "file": "frames/west_corpse.png",
+      "mirrored_from": "east_corpse"
+    }
+  }
+}
