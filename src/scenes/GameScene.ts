@@ -4,7 +4,7 @@ import {
   CAMERA_SPEED, EDGE_SCROLL_PX,
   Side, SIDE, Race, Difficulty, GameMode, StoryMapId, GameLaunchConfig, DIFFICULTY, COLORS, RACE_COLOR,
   UNIT, BUILDING, UnitKind, BuildingKind,
-  RESOURCE, CARAVAN_CONFIG, FOG, FEEL, VISUALS
+  RESOURCE, CARAVAN_CONFIG, FOG, FEEL, VISUALS, SKIRMISH_CONFIG
 } from '../config';
 import { TileMap, TileType } from '../world/TileMap';
 import { generateMap, MapLayout } from '../world/MapGenerator';
@@ -37,6 +37,27 @@ export type GameInit = GameLaunchConfig & { debugPerfSize?: PerfScenarioSize };
 type Point = { x: number; y: number };
 type RepathReason = 'command' | 'group' | 'group-fallback' | 'attack-move' | 'target' | 'resource' | 'return' | 'build' | 'stuck';
 
+export interface SkirmishSummary {
+  durationMs: number;
+  unitsKilled: number;
+  unitsLost: number;
+  resourcesGathered: { gold: number; lumber: number };
+  caravansLooted: number;
+}
+
+export interface GameOverPayload {
+  win: boolean;
+  summary: SkirmishSummary;
+}
+
+interface SkirmishStats {
+  startedAtMs: number;
+  unitsKilled: number;
+  unitsLost: number;
+  resourcesGathered: { gold: number; lumber: number };
+  caravansLooted: number;
+}
+
 interface SharedGroupPath {
   points: Point[];
   tailCache: Map<string, Point[] | null>;
@@ -52,6 +73,16 @@ const GROUP_SLOT_ARRIVAL_RADIUS = 12;
 const GROUP_SLOT_SETTLE_RADIUS = 34;
 const GROUP_SLOT_AVOID_FADE_RADIUS = TILE * 3;
 const PERF_UNIT_MIX: UnitKind[] = ['worker', 'footman', 'archer', 'knight', 'catapult', 'footman', 'archer', 'knight'];
+
+function freshSkirmishStats(): SkirmishStats {
+  return {
+    startedAtMs: 0,
+    unitsKilled: 0,
+    unitsLost: 0,
+    resourcesGathered: { gold: 0, lumber: 0 },
+    caravansLooted: 0
+  };
+}
 
 export class GameScene extends Phaser.Scene {
   map!: TileMap;
@@ -74,7 +105,16 @@ export class GameScene extends Phaser.Scene {
   storyMapId: StoryMapId | null = null;
   seed = 42;
   launchConfig: GameLaunchConfig = { mode: 'skirmish', playerRace: 'alliance', difficulty: 'normal' };
-  aiState: AIState = { phase: 'economy', nextCheckMs: 0, armyTargetScore: 9, regroupUntilMs: 0, lastPressureMs: 0 };
+  aiState: AIState = {
+    phase: 'economy',
+    nextCheckMs: 0,
+    armyTargetScore: 9,
+    regroupUntilMs: 0,
+    lastPressureMs: Number.NEGATIVE_INFINITY,
+    lastAttackOrderMs: Number.NEGATIVE_INFINITY,
+    lastDefenseOrderMs: Number.NEGATIVE_INFINITY,
+    lastCaravanOrderMs: Number.NEGATIVE_INFINITY
+  };
 
   private tileLayer!: Phaser.GameObjects.Container;
   private waterTiles: Phaser.GameObjects.Image[] = [];
@@ -128,6 +168,7 @@ export class GameScene extends Phaser.Scene {
   private unitSpatial = new SpatialIndex<Unit>(TILE * 3);
   private unitSpatialReady = false;
   private unitQueryScratch: Unit[] = [];
+  private skirmishStats: SkirmishStats = freshSkirmishStats();
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -177,12 +218,16 @@ export class GameScene extends Phaser.Scene {
     this.unitSpatialReady = false;
     this.nextGroupMoveId = 1;
     this.repathsThisFrame = 0;
+    this.skirmishStats = freshSkirmishStats();
     this.aiState = {
       phase: 'economy',
       nextCheckMs: 0,
       armyTargetScore: DIFFICULTY[this.difficulty].attackScore,
       regroupUntilMs: 0,
-      lastPressureMs: 0
+      lastPressureMs: Number.NEGATIVE_INFINITY,
+      lastAttackOrderMs: Number.NEGATIVE_INFINITY,
+      lastDefenseOrderMs: Number.NEGATIVE_INFINITY,
+      lastCaravanOrderMs: Number.NEGATIVE_INFINITY
     };
     this.economy = new Economy();
   }
@@ -223,8 +268,11 @@ export class GameScene extends Phaser.Scene {
     this.effects.setupPostFX();
     this.effects.setupVignette();
 
-    this.economy.register(SIDE.player, this.playerRace, 430, 230, this.debugPathfinding || this.debugPerf ? 1000 : 0);
-    this.economy.register(SIDE.ai, this.aiRace, 430, 230, this.debugPathfinding || this.debugPerf ? 1000 : 0);
+    const start = SKIRMISH_CONFIG.start;
+    const debugCap = this.debugPathfinding || this.debugPerf ? 1000 : 0;
+    this.economy.register(SIDE.player, this.playerRace, start.gold, start.lumber, debugCap);
+    this.economy.register(SIDE.ai, this.aiRace, start.gold, start.lumber, debugCap);
+    this.skirmishStats.startedAtMs = this.time.now;
 
     this.drawTiles();
     if (this.debugPathfinding) this.spawnDebugPathfindingScenario();
@@ -353,12 +401,19 @@ export class GameScene extends Phaser.Scene {
   private spawnInitial(): void {
     const pb = this.layout.playerBase;
     const ab = this.layout.aiBase;
+    const start = SKIRMISH_CONFIG.start;
 
-    const pth = this.spawnBuilding(pb.tx - 1, pb.ty - 1, 'townhall', SIDE.player, this.playerRace, true);
-    const ath = this.spawnBuilding(ab.tx - 1, ab.ty - 1, 'townhall', SIDE.ai, this.aiRace, true);
+    const pth = this.spawnBuilding(pb.tx - 1, pb.ty - 1, start.mainBuilding, SIDE.player, this.playerRace, true);
+    const ath = this.spawnBuilding(ab.tx - 1, ab.ty - 1, start.mainBuilding, SIDE.ai, this.aiRace, true);
 
-    for (let i = 0; i < 4; i++) this.spawnUnit(pth.x - 66 + i * 28, pth.y + 76, 'worker', SIDE.player, this.playerRace);
-    for (let i = 0; i < 4; i++) this.spawnUnit(ath.x - 66 + i * 28, ath.y + 76, 'worker', SIDE.ai, this.aiRace);
+    for (let i = 0; i < start.workers; i++) {
+      const x = pth.x + start.workerOffsetX + i * start.workerSpacingX;
+      this.spawnUnit(x, pth.y + start.workerOffsetY, 'worker', SIDE.player, this.playerRace);
+    }
+    for (let i = 0; i < start.workers; i++) {
+      const x = ath.x + start.workerOffsetX + i * start.workerSpacingX;
+      this.spawnUnit(x, ath.y + start.workerOffsetY, 'worker', SIDE.ai, this.aiRace);
+    }
 
     for (const m of this.layout.goldMines) {
       const node = new ResourceNode(this, m.tx - 1, m.ty - 1, 'gold');
@@ -555,7 +610,7 @@ export class GameScene extends Phaser.Scene {
   private caravanSpawnsEnabled(): boolean {
     if (this.debugPathfinding) return false;
     if (this.debugPerf) return false;
-    if (this.mode === 'skirmish') return CARAVAN_CONFIG.enabledInSkirmish;
+    if (this.mode === 'skirmish') return SKIRMISH_CONFIG.caravans.enabled && CARAVAN_CONFIG.enabledInSkirmish;
     return CARAVAN_CONFIG.enabledInStory;
   }
 
@@ -1492,7 +1547,7 @@ export class GameScene extends Phaser.Scene {
     const fogUpdateMs = this.currentFogUpdateMs();
     if (this.lastFogTickMs >= fogUpdateMs) { this.updateFog(); this.lastFogTickMs = 0; }
     this.lastAITickMs += dt;
-    if (!this.debugPathfinding && !this.debugPerf && this.lastAITickMs >= DIFFICULTY[this.difficulty].aiDelayMs) {
+    if (this.mode === 'skirmish' && !this.debugPathfinding && !this.debugPerf && this.lastAITickMs >= DIFFICULTY[this.difficulty].aiDelayMs) {
       runAI(this, this.aiState, this.difficulty);
       this.lastAITickMs = 0;
     }
@@ -1768,9 +1823,12 @@ export class GameScene extends Phaser.Scene {
       this.stepPath(u, dt);
       return;
     }
-    this.economy.deposit(u.side, u.cargo.type, Math.round(u.cargo.amount * (u.side === SIDE.ai ? DIFFICULTY[this.difficulty].incomeBias : 1)));
+    const cargo = u.cargo;
+    const deposited = Math.round(cargo.amount * (u.side === SIDE.ai ? DIFFICULTY[this.difficulty].incomeBias : 1));
+    this.economy.deposit(u.side, cargo.type, deposited);
+    if (this.mode === 'skirmish' && u.side === SIDE.player) this.skirmishStats.resourcesGathered[cargo.type] += cargo.amount;
     if (u.side === SIDE.player) {
-      this.effects.resourceText(hall.x, hall.y, `+${u.cargo.amount} ${u.cargo.type === 'gold' ? 'G' : 'L'}`, u.cargo.type);
+      this.effects.resourceText(hall.x, hall.y, `+${cargo.amount} ${cargo.type === 'gold' ? 'G' : 'L'}`, cargo.type);
       this.audio.play('deposit', 0.45);
     }
     const lastNode = u.targetResource;
@@ -2153,6 +2211,10 @@ export class GameScene extends Phaser.Scene {
     }
     if (from && target.side === SIDE.player && from.side === SIDE.ai) this.reportUnderAttack(target);
     if (wasAlive && !target.alive) {
+      if (this.mode === 'skirmish' && target.kind === 'unit') {
+        if (target.side === SIDE.player) this.skirmishStats.unitsLost++;
+        else if (target.side === SIDE.ai && from?.side === SIDE.player) this.skirmishStats.unitsKilled++;
+      }
       if (wasCaravan) this.grantCaravanLoot(target as Caravan, from, show);
       if (show) {
         if (wasBuilding) {
@@ -2171,6 +2233,7 @@ export class GameScene extends Phaser.Scene {
     const reward = CARAVAN_CONFIG.reward;
     this.economy.deposit(side, 'gold', reward.gold);
     this.economy.deposit(side, 'lumber', reward.lumber);
+    if (this.mode === 'skirmish' && side === SIDE.player) this.skirmishStats.caravansLooted++;
     if (!show) return;
     this.effects.resourceText(caravan.x, caravan.y - 4, `+${reward.gold}G`, 'gold');
     this.effects.resourceText(caravan.x, caravan.y + 14, `+${reward.lumber}L`, 'lumber');
@@ -2327,15 +2390,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkVictory(): void {
-    const playerHasBase = this.buildings.some(b => b.alive && b.side === SIDE.player);
-    const aiHasBase = this.buildings.some(b => b.alive && b.side === SIDE.ai);
-    if (!aiHasBase && playerHasBase) this.endGame(true);
-    else if (!playerHasBase && aiHasBase) this.endGame(false);
+    if (this.mode !== 'skirmish') return;
+    if (SKIRMISH_CONFIG.rules.elimination !== 'allBuildings') return;
+    const playerHasBuildings = this.buildings.some(b => b.alive && b.side === SIDE.player);
+    const aiHasBuildings = this.buildings.some(b => b.alive && b.side === SIDE.ai);
+    if (!playerHasBuildings && !aiHasBuildings) this.endGame(false);
+    else if (!aiHasBuildings) this.endGame(true);
+    else if (!playerHasBuildings) this.endGame(false);
   }
 
   private endGame(win: boolean): void {
     if (this.gameOver) return;
     this.gameOver = true;
+    const payload: GameOverPayload = { win, summary: this.createSkirmishSummary() };
     const color = win ? 0x44ff88 : 0xff4444;
     const mid = this.cameras.main.midPoint;
     this.effects.shockwave(mid.x, mid.y, color);
@@ -2345,8 +2412,18 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 0.35;
     window.setTimeout(() => {
       this.tweens.timeScale = 1;
-      this.game.events.emit('game-over', win);
+      this.game.events.emit('game-over', payload);
     }, 1400);
+  }
+
+  private createSkirmishSummary(): SkirmishSummary {
+    return {
+      durationMs: Math.max(0, this.time.now - this.skirmishStats.startedAtMs),
+      unitsKilled: this.skirmishStats.unitsKilled,
+      unitsLost: this.skirmishStats.unitsLost,
+      resourcesGathered: { ...this.skirmishStats.resourcesGathered },
+      caravansLooted: this.skirmishStats.caravansLooted
+    };
   }
 
   private flashMessage(text: string): void {

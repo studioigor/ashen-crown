@@ -68,9 +68,72 @@ export const STORY_MODE_DEFAULTS = {
 } as const satisfies StoryLaunchConfig;
 
 export const DIFFICULTY = {
-  easy: { label: 'Easy', aiDelayMs: 1200, attackScore: 7, targetWorkers: 7, incomeBias: 0.95 },
-  normal: { label: 'Normal', aiDelayMs: 750, attackScore: 9, targetWorkers: 10, incomeBias: 1 },
-  hard: { label: 'Hard', aiDelayMs: 520, attackScore: 11, targetWorkers: 13, incomeBias: 1.1 }
+  easy: {
+    label: 'Easy',
+    aiDelayMs: 1200,
+    attackScore: 7,
+    targetWorkers: 7,
+    incomeBias: 0.95,
+    townhallQueueCap: 1,
+    barracksQueueCap: 1,
+    workshopQueueCap: 1,
+    attackWaveMinUnits: 4,
+    regroupMs: 12000,
+    regroupGrowth: 3,
+    defenseRadiusTiles: 11,
+    defenseHoldMs: 14000,
+    caravanOpportunityRadiusTiles: 5
+  },
+  normal: {
+    label: 'Normal',
+    aiDelayMs: 750,
+    attackScore: 9,
+    targetWorkers: 10,
+    incomeBias: 1,
+    townhallQueueCap: 2,
+    barracksQueueCap: 2,
+    workshopQueueCap: 1,
+    attackWaveMinUnits: 5,
+    regroupMs: 9500,
+    regroupGrowth: 3,
+    defenseRadiusTiles: 13,
+    defenseHoldMs: 12000,
+    caravanOpportunityRadiusTiles: 6
+  },
+  hard: {
+    label: 'Hard',
+    aiDelayMs: 520,
+    attackScore: 11,
+    targetWorkers: 13,
+    incomeBias: 1.1,
+    townhallQueueCap: 2,
+    barracksQueueCap: 3,
+    workshopQueueCap: 1,
+    attackWaveMinUnits: 6,
+    regroupMs: 6500,
+    regroupGrowth: 2,
+    defenseRadiusTiles: 15,
+    defenseHoldMs: 10000,
+    caravanOpportunityRadiusTiles: 7
+  }
+} as const;
+
+export const SKIRMISH_CONFIG = {
+  start: {
+    gold: 430,
+    lumber: 230,
+    workers: 4,
+    mainBuilding: 'townhall',
+    workerOffsetX: -66,
+    workerOffsetY: 76,
+    workerSpacingX: 28
+  },
+  rules: {
+    elimination: 'allBuildings'
+  },
+  caravans: {
+    enabled: true
+  }
 } as const;
 
 export const RACE_COLOR: Record<Race, number> = {

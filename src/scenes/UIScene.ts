@@ -9,7 +9,7 @@ import { Building } from '../entities/Building';
 import { ResourceNode } from '../entities/ResourceNode';
 import { Caravan } from '../entities/Caravan';
 import { artAssetUrl } from '../assets/artManifest';
-import { GameScene } from './GameScene';
+import { GameScene, type GameOverPayload, type SkirmishSummary } from './GameScene';
 
 interface UIInit {
   playerSide: Side;
@@ -67,6 +67,7 @@ export class UIScene extends Phaser.Scene {
   private elTooltip = document.getElementById('entity-tooltip')!;
   private elGameOver = document.getElementById('game-over-screen')!;
   private elGameOverTitle = document.getElementById('game-over-title')!;
+  private elGameOverSummary = document.getElementById('game-over-summary')!;
   private mmCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
   private mmCtx = this.mmCanvas.getContext('2d')!;
 
@@ -83,7 +84,7 @@ export class UIScene extends Phaser.Scene {
     this.renderCommandPanel();
   };
   private onFlash = (m: string): void => this.showMessage(m);
-  private onGameOver = (win: boolean): void => this.showGameOver(win);
+  private onGameOver = (payload: GameOverPayload | boolean): void => this.showGameOver(payload);
   private onMode = (m: string): void => {
     this.modeOverrideText = m;
     this.renderModeText();
@@ -127,6 +128,7 @@ export class UIScene extends Phaser.Scene {
     this.renderModeText();
     this.elUiLayer.style.display = 'flex';
     this.elGameOver.classList.remove('visible');
+    this.elGameOverSummary.innerHTML = '';
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.game.events.off('selection-changed', this.onSelectionChanged);
@@ -146,6 +148,7 @@ export class UIScene extends Phaser.Scene {
       this.elLumber.innerText = 'Дерево: 0';
       this.elFood.innerText = 'Лимит: 0/0';
       this.elModeText.innerText = '';
+      this.elGameOverSummary.innerHTML = '';
     });
   }
 
@@ -495,10 +498,12 @@ export class UIScene extends Phaser.Scene {
     }, 2000);
   }
 
-  private showGameOver(win: boolean): void {
+  private showGameOver(result: GameOverPayload | boolean): void {
+    const win = typeof result === 'boolean' ? result : result.win;
     this.elGameOver.classList.add('visible');
     this.elGameOverTitle.innerText = win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ';
     this.elGameOverTitle.className = win ? 'win' : 'lose';
+    this.elGameOverSummary.innerHTML = typeof result === 'boolean' ? '' : renderSkirmishSummary(result.summary);
   }
 
   private drawMinimap(): void {
@@ -604,6 +609,26 @@ function summarizeSelection(units: Unit[]): string {
   const autopilotCount = units.filter(u => u.autopilot).length;
   if (autopilotCount > 0) summary += `\nАвтопилот: ${autopilotCount}/${units.length}`;
   return summary;
+}
+
+function renderSkirmishSummary(summary: SkirmishSummary): string {
+  const rows: [string, string][] = [
+    ['Время', formatDuration(summary.durationMs)],
+    ['Убито', `${summary.unitsKilled}`],
+    ['Потери', `${summary.unitsLost}`],
+    ['Ресурсы', `${summary.resourcesGathered.gold}G / ${summary.resourcesGathered.lumber}L`],
+    ['Караваны', `${summary.caravansLooted}`]
+  ];
+  return rows
+    .map(([label, value]) => `<div class="game-over-summary-row"><span>${label}</span><strong>${value}</strong></div>`)
+    .join('');
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function buildTooltip(kind: BuildingKind): string {
