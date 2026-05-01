@@ -246,6 +246,17 @@
   box-shadow: 0 8px 16px rgba(0,0,0,0.55), 0 0 10px rgba(255, 223, 122, 0.35);
 }
 
+.cmd-btn.active {
+  border-color: rgba(102, 221, 255, 0.85);
+  background: rgba(28, 76, 91, 0.92);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.55), 0 0 12px rgba(102, 221, 255, 0.34), inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+.cmd-btn.active .cmd-icon {
+  border-color: rgba(102, 221, 255, 0.75);
+  box-shadow: inset 0 1px rgba(255,255,255,0.16), 0 0 10px rgba(102,221,255,0.28);
+}
+
 .cmd-btn:active {
   transform: translateY(2px) scale(0.97);
   background: rgba(255, 255, 255, 0.05);
@@ -281,6 +292,13 @@
   color: var(--ui-accent);
   font-weight: 500;
   opacity: 0.9;
+}
+
+.cmd-state {
+  font-size: 0.85rem;
+  color: #66ddff;
+  font-weight: 600;
+  opacity: 0.95;
 }
 
 /* MINIMAP WRAPPER overlay */

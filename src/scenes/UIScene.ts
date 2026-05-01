@@ -234,17 +234,24 @@ export class UIScene extends Phaser.Scene {
     
     const avgHp = Math.round(sel.reduce((s, u) => s + u.hp, 0) / sel.length);
     this.elStats.innerText = `HP ${Math.round(first.hp)}/${first.maxHp} • средн. ${avgHp} • атака ${first.atk} • ${stateLabel(first.state)}`;
-    this.elSummary.innerText = summarizeUnits(sel);
-    
-    const cargo = sel.find(u => u.cargo)?.cargo;
-    if (cargo) {
-      this.elSummary.innerText += `\nНесет: ${cargo.type === 'gold' ? 'золото' : 'дерево'} x${cargo.amount}`;
-    }
+    this.elSummary.innerText = summarizeSelection(sel);
 
     this.elProgressCont.style.display = 'none';
 
     const hasWorker = sel.some(u => u.isWorker());
     if (hasWorker) this.addButton('Строить [B]', 'Открыть меню строительства', () => this.openBuildMenu(), '', 'build');
+    if (this.game_.isAutopilotAllowed()) {
+      const autopilotCount = sel.filter(u => u.autopilot).length;
+      const allAutopilot = autopilotCount === sel.length;
+      this.addButton(
+        'Автопилот',
+        allAutopilot ? 'Вернуть выбранных юнитов под ручное управление' : 'Передать выбранных юнитов под автопилот',
+        () => this.game.events.emit('ui-autopilot'),
+        `<span class="cmd-state">${autopilotCount}/${sel.length}</span>`,
+        'autopilot',
+        allAutopilot
+      );
+    }
     this.addButton('Стоп [X]', 'Сбросить текущие приказы', () => this.game.events.emit('ui-stop'), '', 'stop');
     this.addButton('Атака [Q]', 'Атака-движение: Q, затем ЛКМ по точке', () => this.showMessage('Нажмите Q, затем ЛКМ по точке атаки'), '', 'attack_move');
   }
@@ -255,7 +262,9 @@ export class UIScene extends Phaser.Scene {
     const sel = this.game_.selected;
     if (sel.length === 0) return '';
     const hasWorker = sel.some(u => u.isWorker()) ? 1 : 0;
-    return `u:${sel.length}:${hasWorker}`;
+    const autopilotCount = sel.filter(u => u.autopilot).length;
+    const autopilotAllowed = this.game_.isAutopilotAllowed() ? 1 : 0;
+    return `u:${sel.length}:${hasWorker}:${autopilotCount}:${autopilotAllowed}`;
   }
 
   private refreshPanelText(): void {
@@ -304,10 +313,7 @@ export class UIScene extends Phaser.Scene {
     const first = sel[0];
     const avgHp = Math.round(sel.reduce((s, u) => s + u.hp, 0) / sel.length);
     this.elStats.innerText = `HP ${Math.round(first.hp)}/${first.maxHp} • средн. ${avgHp} • атака ${first.atk} • ${stateLabel(first.state)}`;
-    let summary = summarizeUnits(sel);
-    const cargo = sel.find(u => u.cargo)?.cargo;
-    if (cargo) summary += `\nНесет: ${cargo.type === 'gold' ? 'золото' : 'дерево'} x${cargo.amount}`;
-    this.elSummary.innerText = summary;
+    this.elSummary.innerText = summarizeSelection(sel);
   }
 
   private renderBuildingPanel(b: Building): void {
@@ -370,9 +376,10 @@ export class UIScene extends Phaser.Scene {
     });
   }
 
-  private addButton(label: string, tooltip: string, onClick: () => void, extraHtml = '', icon?: string): void {
+  private addButton(label: string, tooltip: string, onClick: () => void, extraHtml = '', icon?: string, active = false): void {
     const btn = document.createElement('button');
-    btn.className = 'cmd-btn';
+    btn.className = active ? 'cmd-btn active' : 'cmd-btn';
+    if (active) btn.setAttribute('aria-pressed', 'true');
     const iconHtml = icon ? `<img class="cmd-icon" src="${this.iconUrl(icon)}" alt="" draggable="false">` : '';
     btn.innerHTML = `${iconHtml}<span class="cmd-copy"><span class="cmd-label">${escapeHtml(label)}</span>${extraHtml}</span>`;
     btn.onclick = onClick;
@@ -590,6 +597,15 @@ function summarizeUnits(units: Unit[]): string {
   return [...counts.entries()].map(([kind, n]) => `${UNIT[kind].labelByRace[units[0].race]} x${n}`).join(' • ');
 }
 
+function summarizeSelection(units: Unit[]): string {
+  let summary = summarizeUnits(units);
+  const cargo = units.find(u => u.cargo)?.cargo;
+  if (cargo) summary += `\nНесет: ${cargo.type === 'gold' ? 'золото' : 'дерево'} x${cargo.amount}`;
+  const autopilotCount = units.filter(u => u.autopilot).length;
+  if (autopilotCount > 0) summary += `\nАвтопилот: ${autopilotCount}/${units.length}`;
+  return summary;
+}
+
 function buildTooltip(kind: BuildingKind): string {
   if (kind === 'farm') return 'Увеличивает лимит снабжения';
   if (kind === 'barracks') return 'Нанимает пехоту и кавалерию';
@@ -625,6 +641,7 @@ function describeUnitTooltip(u: Unit): TooltipModel {
   if (u.canAttack()) {
     rows.splice(1, 0, { label: 'Атака', value: `${u.atk}` }, { label: 'Дальность', value: `${Math.round(u.range)}` });
   }
+  if (u.side === SIDE.player) rows.push({ label: 'Автопилот', value: u.autopilot ? 'включен' : 'выключен' });
   if (u.isWorker()) rows.push({ label: 'Груз', value: u.cargo ? `${resourceLabel(u.cargo.type)} x${u.cargo.amount}` : 'пусто' });
   return {
     title: labelForUnit(u.unitKind, u.race),

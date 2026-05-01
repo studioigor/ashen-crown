@@ -17,6 +17,7 @@ import { IEntity } from '../entities/Entity';
 import { findPath } from '../systems/Pathfinding';
 import { Economy } from '../systems/Economy';
 import { runAI, AIState } from '../systems/AI';
+import { runPlayerAutopilot } from '../systems/PlayerAutopilot';
 import { EffectsSystem } from '../systems/EffectsSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { formationSlots } from '../systems/Formation';
@@ -88,6 +89,7 @@ export class GameScene extends Phaser.Scene {
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
   private onUiStop = (): void => this.commandStop();
+  private onUiAutopilot = (): void => this.toggleAutopilotForSelection();
   private onUiCenterTownhall = (): void => this.centerOnTownhall();
   private onUiMinimapClick = (wx: number, wy: number): void => { this.cameras.main.centerOn(wx, wy); };
 
@@ -186,6 +188,7 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on('ui-build', this.onUiBuild);
     this.game.events.on('ui-train', this.onUiTrain);
     this.game.events.on('ui-stop', this.onUiStop);
+    this.game.events.on('ui-autopilot', this.onUiAutopilot);
     this.game.events.on('ui-center-townhall', this.onUiCenterTownhall);
     this.game.events.on('ui-minimap-click', this.onUiMinimapClick);
 
@@ -194,6 +197,7 @@ export class GameScene extends Phaser.Scene {
       this.game.events.off('ui-build', this.onUiBuild);
       this.game.events.off('ui-train', this.onUiTrain);
       this.game.events.off('ui-stop', this.onUiStop);
+      this.game.events.off('ui-autopilot', this.onUiAutopilot);
       this.game.events.off('ui-center-townhall', this.onUiCenterTownhall);
       this.game.events.off('ui-minimap-click', this.onUiMinimapClick);
       this.cancelPlacement();
@@ -670,6 +674,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     if (this.selected.length === 0) return;
+    this.disableSelectedAutopilot();
     const hit = this.findEntityAt(p.worldX, p.worldY);
     if (hit instanceof Caravan) {
       for (const u of this.selected) this.orderAttack(u, hit);
@@ -718,6 +723,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private commandAttackMoveWorld(p: Phaser.Input.Pointer): void {
+    this.disableSelectedAutopilot();
     const slots = formationSlots(this.selected, { x: p.worldX, y: p.worldY }, 34);
     this.selected.forEach((u, i) => {
       if (!u.canAttack()) { this.orderMove(u, slots[i].x, slots[i].y); return; }
@@ -731,9 +737,44 @@ export class GameScene extends Phaser.Scene {
   }
 
   private commandStop(): void {
+    this.disableSelectedAutopilot();
     for (const u of this.selected) u.clearOrders();
     this.setAttackMoveMode(false);
     this.audio.play('move', 0.5);
+  }
+
+  isAutopilotAllowed(): boolean {
+    return true;
+  }
+
+  toggleAutopilotForSelection(): void {
+    if (!this.isAutopilotAllowed()) return;
+    const units = this.selected.filter(u => u.alive && u.side === SIDE.player);
+    if (units.length === 0) return;
+
+    const enable = units.some(u => !u.autopilot);
+    for (const u of units) {
+      u.autopilot = enable;
+      u.autopilotAnchor = enable ? { x: u.x, y: u.y } : null;
+      u.autopilotNextThinkMs = enable ? this.time.now : 0;
+    }
+
+    const mid = this.cameras.main.midPoint;
+    this.effects.statusText(mid.x, mid.y - 80, enable ? 'Автопилот включен' : 'Автопилот выключен', enable ? 0x66ddff : 0xffffff);
+    this.audio.play('move', 0.45);
+    this.game.events.emit('selection-changed', { units: this.selected, building: this.selectedBuilding });
+  }
+
+  private disableSelectedAutopilot(): void {
+    let changed = false;
+    for (const u of this.selected) {
+      if (!u.autopilot) continue;
+      u.autopilot = false;
+      u.autopilotAnchor = null;
+      u.autopilotNextThinkMs = 0;
+      changed = true;
+    }
+    if (changed) this.game.events.emit('selection-changed', { units: this.selected, building: this.selectedBuilding });
   }
 
   private centerOnTownhall(): void {
@@ -856,6 +897,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.economy.spend(SIDE.player, def.cost.gold, def.cost.lumber)) return;
     const site = this.spawnBuilding(tx, ty, this.placementKind, SIDE.player, this.playerRace, false);
     const worker = this.selected.find(u => u.isWorker())!;
+    this.disableSelectedAutopilot();
     this.orderBuild(worker, site);
     this.effects.commandMarker(site.x, site.y, 0x88ff88, 'build', 'Строить');
     this.audio.play('build');
@@ -915,6 +957,7 @@ export class GameScene extends Phaser.Scene {
     if (this.gameOver) return;
     this.updateCamera(dt);
     this.effects.ambientViewportTick(dt, this.cameras.main.worldView);
+    runPlayerAutopilot(this);
     this.updateUnits(dt);
     this.applySeparation(dt);
     this.updateCaravans(dt);

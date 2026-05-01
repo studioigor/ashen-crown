@@ -88,6 +88,9 @@ export class Unit implements IEntity {
   returnTo: Building | null = null;
   cargo: { type: ResourceType; amount: number } | null = null;
   gatherAccum = 0;
+  autopilot = false;
+  autopilotAnchor: { x: number; y: number } | null = null;
+  autopilotNextThinkMs = 0;
 
   hb: HealthBar;
 
