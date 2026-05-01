@@ -6,12 +6,21 @@ import { ParticleFX } from './ParticleFX';
 type CommandKind = 'move' | 'attack' | 'build' | 'gather' | 'return' | 'rally';
 type TrailKind = 'arrow' | 'siege' | 'magic';
 
+export interface EffectsStats {
+  floatingTexts: number;
+  decals: number;
+  pooledTexts: number;
+  pooledImages: number;
+}
+
 export class EffectsSystem {
   readonly fx: ParticleFX;
   private hitPauseUntil = 0;
   private vignette: Phaser.GameObjects.Image | null = null;
   private decals: Phaser.GameObjects.Image[] = [];
   private floatingTexts = 0;
+  private textPool: Phaser.GameObjects.Text[] = [];
+  private imagePool: Phaser.GameObjects.Image[] = [];
   private ambientMs = 0;
 
   constructor(private scene: Phaser.Scene) {
@@ -32,6 +41,15 @@ export class EffectsSystem {
       .setDepth(1500)
       .setAlpha(0.3);
     this.vignette = v;
+  }
+
+  getStats(): EffectsStats {
+    return {
+      floatingTexts: this.floatingTexts,
+      decals: this.decals.length,
+      pooledTexts: this.textPool.length,
+      pooledImages: this.imagePool.length
+    };
   }
 
   clickMarker(x: number, y: number, color: number, label?: string): void {
@@ -119,10 +137,12 @@ export class EffectsSystem {
   }
 
   damageText(x: number, y: number, amount: number, strong = false): void {
+    if (!this.isInView(x, y)) return;
     this.floatText(x, y - 12, strong ? `-${amount}!` : `-${amount}`, strong ? 0xffd36a : 0xff7777, 620, -28, strong ? 18 : 14);
   }
 
   resourceText(x: number, y: number, text: string, type: 'gold' | 'lumber'): void {
+    if (!this.isInView(x, y)) return;
     this.floatText(x, y - 8, text, type === 'gold' ? COLORS.goldMine : 0x8bd36a, 720, -30, 14);
   }
 
@@ -143,6 +163,7 @@ export class EffectsSystem {
   }
 
   deathPuff(x: number, y: number, side: Side): void {
+    if (!this.isInView(x, y)) return;
     // Blood splash (living) + dust — we can't know here if it was a unit or building, caller decides
     const color = side === SIDE.player ? 0x9bd8ff : side === SIDE.ai ? 0xff9a88 : 0xb8d48c;
     this.fx.dustPuff(x, y, false);
@@ -154,6 +175,7 @@ export class EffectsSystem {
 
   /** Melee contact — sparks + blood/chips + small shake + hit flash. */
   meleeImpact(x: number, y: number, targetIsBuilding: boolean, dirX = 0, dirY = -1): void {
+    if (!this.isInView(x, y)) return;
     this.fx.meleeSparks(x, y);
     if (targetIsBuilding) {
       this.fx.dustPuff(x, y, true);
@@ -169,6 +191,7 @@ export class EffectsSystem {
 
   /** Projectile lands — small impact. */
   projectileImpact(x: number, y: number, targetIsBuilding: boolean, dirX = 0, dirY = -1): void {
+    if (!this.isInView(x, y)) return;
     this.fx.meleeSparks(x, y);
     if (targetIsBuilding) {
       this.fx.dustPuff(x, y, true);
@@ -181,6 +204,7 @@ export class EffectsSystem {
 
   /** Huge catapult explosion with shockwave + hit-pause. */
   explosion(x: number, y: number): void {
+    if (!this.isInView(x, y, 160)) return;
     this.fx.explosion(x, y);
     this.fx.debrisBurst(x, y);
     this.shockwave(x, y, 0xffdc88);
@@ -191,6 +215,7 @@ export class EffectsSystem {
 
   /** Kicked up dust from a worker's step. */
   stepDust(x: number, y: number): void {
+    if (!this.isInView(x, y, 80)) return;
     this.fx.stepDust(x, y);
   }
 
@@ -200,6 +225,7 @@ export class EffectsSystem {
   }
 
   gatherImpact(x: number, y: number, type: 'gold' | 'lumber'): void {
+    if (!this.isInView(x, y)) return;
     if (type === 'gold') {
       this.fx.goldPop(x, y);
       this.fx.magicBurst(x, y, 3);
@@ -210,6 +236,7 @@ export class EffectsSystem {
   }
 
   buildProgressPulse(x: number, y: number, radius: number): void {
+    if (!this.isInView(x, y, radius + 80)) return;
     this.fx.dustPuff(x, y + radius * 0.45, true);
     if (Math.random() < 0.35) this.fx.emberBurst(x, y - radius * 0.25, 2);
   }
@@ -222,29 +249,33 @@ export class EffectsSystem {
   }
 
   unitSpawn(x: number, y: number, color: number): void {
+    if (!this.isInView(x, y)) return;
     this.fx.dustPuff(x, y + 8, true);
     this.fx.magicBurst(x, y, 7);
     this.commandMarker(x, y, color, 'rally');
   }
 
   projectileTrail(x: number, y: number, rotation: number, kind: TrailKind): void {
+    if (!this.isInView(x, y, 80)) return;
     if (kind === 'siege') {
       this.fx.emberBurst(x, y, 1);
       if (Math.random() < 0.5) this.fx.dustPuff(x, y, true);
       return;
     }
     const key = kind === 'magic' ? 'px_rune' : 'px_arrow_trail';
-    const img = this.scene.add.image(x, y, key)
+    const img = this.acquireImage(key)
+      .setPosition(x, y)
       .setDepth(39)
       .setRotation(rotation)
       .setBlendMode(kind === 'magic' ? Phaser.BlendModes.ADD : Phaser.BlendModes.NORMAL)
-      .setAlpha(kind === 'magic' ? 0.8 : 0.55);
+      .setAlpha(kind === 'magic' ? 0.8 : 0.55)
+      .setScale(1);
     this.scene.tweens.add({
       targets: img,
       alpha: 0,
       scaleX: { from: kind === 'magic' ? 1 : 0.8, to: 0.1 },
       duration: kind === 'magic' ? 260 : 180,
-      onComplete: () => img.destroy()
+      onComplete: () => this.releaseImage(img)
     });
   }
 
@@ -262,6 +293,7 @@ export class EffectsSystem {
 
   /** Big destruction for buildings. */
   buildingDestroyed(x: number, y: number, color: number): void {
+    if (!this.isInView(x, y, 180)) return;
     this.fx.explosion(x, y);
     this.fx.debrisBurst(x, y);
     this.fx.debrisBurst(x - 10, y + 6);
@@ -273,7 +305,9 @@ export class EffectsSystem {
   }
 
   shockwave(x: number, y: number, color: number): void {
-    const g = this.scene.add.image(x, y, 'px_shockwave').setDepth(225);
+    if (!this.isInView(x, y, 180)) return;
+    const g = this.acquireImage('px_shockwave').setDepth(225);
+    g.setPosition(x, y).setScale(1).setAlpha(1).clearTint();
     g.setBlendMode(Phaser.BlendModes.ADD);
     g.setTint(color);
     this.scene.tweens.add({
@@ -282,7 +316,7 @@ export class EffectsSystem {
       alpha: { from: 1, to: 0 },
       duration: 520,
       ease: 'Cubic.easeOut',
-      onComplete: () => g.destroy()
+      onComplete: () => this.releaseImage(g)
     });
   }
 
@@ -302,10 +336,10 @@ export class EffectsSystem {
 
   battlefieldDecal(x: number, y: number, color: number, key: string, scale = 1): void {
     if (!this.scene.textures.exists(key)) return;
-    const decal = this.scene.add.image(
+    if (!this.isInView(x, y, 120)) return;
+    const decal = this.acquireImage(key).setPosition(
       x + Phaser.Math.Between(-5, 5),
-      y + Phaser.Math.Between(-4, 4),
-      key
+      y + Phaser.Math.Between(-4, 4)
     )
       .setDepth(7)
       .setTint(color)
@@ -315,7 +349,10 @@ export class EffectsSystem {
     this.decals.push(decal);
     while (this.decals.length > VISUALS.maxPersistentDecals) {
       const old = this.decals.shift();
-      old?.destroy();
+      if (old) {
+        this.scene.tweens.killTweensOf(old);
+        this.releaseImage(old);
+      }
     }
     this.scene.tweens.add({
       targets: decal,
@@ -325,7 +362,7 @@ export class EffectsSystem {
       onComplete: () => {
         const idx = this.decals.indexOf(decal);
         if (idx >= 0) this.decals.splice(idx, 1);
-        decal.destroy();
+        this.releaseImage(decal);
       }
     });
   }
@@ -380,14 +417,9 @@ export class EffectsSystem {
 
   private floatText(x: number, y: number, text: string, color: number, duration: number, dy: number, size = 13): void {
     if (this.floatingTexts >= VISUALS.maxFloatingTexts) return;
+    if (!this.isInView(x, y)) return;
     this.floatingTexts++;
-    const t = this.scene.add.text(x, y, text, {
-      fontFamily: 'monospace',
-      fontSize: `${size}px`,
-      color: Phaser.Display.Color.IntegerToColor(color).rgba,
-      stroke: '#000000',
-      strokeThickness: 3
-    }).setOrigin(0.5).setDepth(230);
+    const t = this.acquireText(x, y, text, color, size);
     this.scene.tweens.add({
       targets: t,
       y: y + dy,
@@ -396,8 +428,59 @@ export class EffectsSystem {
       ease: 'Quad.easeOut',
       onComplete: () => {
         this.floatingTexts--;
-        t.destroy();
+        this.releaseText(t);
       }
     });
+  }
+
+  private acquireText(x: number, y: number, text: string, color: number, size: number): Phaser.GameObjects.Text {
+    const t = this.textPool.pop() ?? this.scene.add.text(0, 0, '', {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#ffffff',
+      stroke: '#000000',
+      strokeThickness: 3
+    });
+    this.scene.tweens.killTweensOf(t);
+    t.setText(text);
+    t.setStyle({
+      fontFamily: 'monospace',
+      fontSize: `${size}px`,
+      color: Phaser.Display.Color.IntegerToColor(color).rgba,
+      stroke: '#000000',
+      strokeThickness: 3
+    });
+    t.setPosition(x, y).setOrigin(0.5).setDepth(230).setAlpha(1).setScale(1).setVisible(true).setActive(true);
+    return t;
+  }
+
+  private releaseText(t: Phaser.GameObjects.Text): void {
+    t.setVisible(false).setActive(false);
+    if (this.textPool.length < VISUALS.maxFloatingTexts) this.textPool.push(t);
+    else t.destroy();
+  }
+
+  private acquireImage(key: string): Phaser.GameObjects.Image {
+    const img = this.imagePool.pop() ?? this.scene.add.image(0, 0, key);
+    this.scene.tweens.killTweensOf(img);
+    img.setTexture(key);
+    img.clearTint();
+    img.setBlendMode(Phaser.BlendModes.NORMAL);
+    img.setVisible(true).setActive(true).setAlpha(1).setScale(1).setRotation(0);
+    return img;
+  }
+
+  private releaseImage(img: Phaser.GameObjects.Image): void {
+    img.setVisible(false).setActive(false);
+    if (this.imagePool.length < VISUALS.maxPersistentDecals + 48) this.imagePool.push(img);
+    else img.destroy();
+  }
+
+  private isInView(x: number, y: number, margin = 120): boolean {
+    const view = this.scene.cameras.main.worldView;
+    return x >= view.x - margin
+      && x <= view.right + margin
+      && y >= view.y - margin
+      && y <= view.bottom + margin;
   }
 }

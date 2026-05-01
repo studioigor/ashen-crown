@@ -1,6 +1,19 @@
 import Phaser from 'phaser';
 import { VISUALS } from '../config';
 
+export interface ParticleFXStats {
+  emitted: number;
+  dropped: number;
+  activeApprox: number;
+  budgetUsed: number;
+  budgetLimit: number;
+}
+
+interface ActiveBurst {
+  count: number;
+  expiresAt: number;
+}
+
 /**
  * Pool of re-used particle emitters for combat VFX.
  * Each emitter is created once (in `create()` on GameScene) and burst via `explode()`.
@@ -22,6 +35,11 @@ export class ParticleFX {
   private magic: Phaser.GameObjects.Particles.ParticleEmitter;
   private budgetWindowMs = 0;
   private budgetUsed = 0;
+  private budgetLimit: number = VISUALS.particleBudgetPerSecond;
+  private emitted = 0;
+  private dropped = 0;
+  private activeBursts: ActiveBurst[] = [];
+  private activeApprox = 0;
 
   constructor(private scene: Phaser.Scene) {
     this.sparks = this.createEmitter('px_spark', {
@@ -179,12 +197,36 @@ export class ParticleFX {
   }
 
   private canSpend(count: number): boolean {
-    return true; // Overhauled for MAXIMUM visual impact, bypass budget
+    const now = this.scene.time.now;
+    this.pruneActive(now);
+    if (now - this.budgetWindowMs >= 1000) {
+      this.budgetWindowMs = now;
+      this.budgetUsed = 0;
+      this.budgetLimit = this.currentBudgetLimit();
+    }
+    if (this.budgetUsed + count > this.budgetLimit) {
+      this.dropped += count;
+      return false;
+    }
+    this.budgetUsed += count;
+    this.emitted += count;
+    this.activeApprox += count;
+    this.activeBursts.push({ count, expiresAt: now + 1400 });
+    return true;
   }
 
   // ---- public API ----
 
-  // ---- public API ----
+  getStats(): ParticleFXStats {
+    this.pruneActive(this.scene.time.now);
+    return {
+      emitted: this.emitted,
+      dropped: this.dropped,
+      activeApprox: this.activeApprox,
+      budgetUsed: this.budgetUsed,
+      budgetLimit: this.budgetLimit
+    };
+  }
 
   meleeSparks(x: number, y: number): void {
     const n = Phaser.Math.Between(20, 35);
@@ -287,5 +329,18 @@ export class ParticleFX {
     });
     e.setDepth(39);
     return e;
+  }
+
+  private currentBudgetLimit(): number {
+    const units = (this.scene as Phaser.Scene & { units?: unknown[] }).units?.length ?? 0;
+    const scale = units >= 500 ? 0.45 : units >= 300 ? 0.65 : units >= 100 ? 0.85 : 1;
+    return Math.max(120, Math.floor(VISUALS.particleBudgetPerSecond * scale));
+  }
+
+  private pruneActive(now: number): void {
+    while (this.activeBursts.length > 0 && this.activeBursts[0].expiresAt <= now) {
+      const burst = this.activeBursts.shift()!;
+      this.activeApprox = Math.max(0, this.activeApprox - burst.count);
+    }
   }
 }

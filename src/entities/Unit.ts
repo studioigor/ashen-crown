@@ -112,6 +112,7 @@ export class Unit implements IEntity {
   private lastStepDust = 0;
   private lastX = 0;
   private lastY = 0;
+  private lastVisualUpdate = 0;
   private lastVisible = true;
   private usingArtSheet = false;
   private facing: UnitFacing = 'south';
@@ -173,7 +174,7 @@ export class Unit implements IEntity {
   takeDamage(n: number, _from?: IEntity): void {
     if (!this.alive) return;
     this.hp -= n;
-    this.hb.update();
+    this.hb.update(true);
     if (this.hp <= 0) this.die();
   }
 
@@ -413,6 +414,9 @@ export class Unit implements IEntity {
 
     // Skip rig updates if off-screen — major perf win
     if (!this.lastVisible) return;
+    const now = this.sprite.scene.time.now;
+    if (!this.isNearCamera() && now - this.lastVisualUpdate < 250) return;
+    this.lastVisualUpdate = now;
 
     const dx = this.sprite.x - this.lastX;
     const dy = this.sprite.y - this.lastY;
@@ -426,7 +430,6 @@ export class Unit implements IEntity {
       if (moving) {
         this.facing = getUnitFacingFromVector(faceDx, faceDy, this.facing);
         if (!this.attackBusy && !this.workBusy) this.playArtAnimation('walk');
-        const now = this.sprite.scene.time.now;
         if (now - this.lastStepDust > VISUALS.stepDustMs) {
           this.lastStepDust = now;
           const anyScene = this.sprite.scene as any;
@@ -463,7 +466,6 @@ export class Unit implements IEntity {
     if (moving) {
       this.walkPhase += 0.25;
       this.sprite.setScale(1, 1 + Math.abs(Math.sin(this.walkPhase * 2)) * 0.035);
-      const now = this.sprite.scene.time.now;
       if (now - this.lastStepDust > VISUALS.stepDustMs) {
         this.lastStepDust = now;
         const anyScene = this.sprite.scene as any;
@@ -543,5 +545,14 @@ export class Unit implements IEntity {
     this.sprite.setDepth(base);
     this.weapon?.setDepth(base + 1);
     this.cargoBadge?.setDepth(base + 2);
+  }
+
+  private isNearCamera(): boolean {
+    const view = this.sprite.scene.cameras.main.worldView;
+    const margin = 112;
+    return this.sprite.x >= view.x - margin
+      && this.sprite.x <= view.right + margin
+      && this.sprite.y >= view.y - margin
+      && this.sprite.y <= view.bottom + margin;
   }
 }

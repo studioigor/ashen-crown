@@ -108,7 +108,7 @@ export class Caravan implements IEntity {
     if (!this.alive) return;
     this.hp -= amount;
     this.killedBy = from ?? this.killedBy;
-    this.hb.update();
+    this.hb.update(true);
     if (this.hp <= 0) this.die(from);
   }
 

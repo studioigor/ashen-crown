@@ -74,7 +74,7 @@ export class ResourceNode implements IEntity {
     this.amount -= got;
     this.hp = this.amount;
     this.updateResourceTexture();
-    this.hb.update();
+    this.hb.update(true);
     if (this.amount <= 0) this.destroy();
     return got;
   }

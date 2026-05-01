@@ -272,7 +272,7 @@ export class Building implements IEntity {
       this.stopEmitters();
       this.maybeStartChimney();
       this.drawFlag(this.flagPhase);
-      this.hb.update();
+      this.hb.update(true);
       return true;
     }
 
@@ -292,7 +292,7 @@ export class Building implements IEntity {
         }
       });
     }
-    this.hb.update();
+    this.hb.update(true);
     return false;
   }
 
@@ -325,7 +325,7 @@ export class Building implements IEntity {
     if (!this.alive) return;
     this.hp -= n;
     this.updateDamageOverlay();
-    this.hb.update();
+    this.hb.update(true);
     if (this.hp <= 0) this.destroy();
   }
 

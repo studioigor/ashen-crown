@@ -13,7 +13,7 @@ import { Unit } from '../entities/Unit';
 import { Building } from '../entities/Building';
 import { ResourceNode } from '../entities/ResourceNode';
 import { Caravan } from '../entities/Caravan';
-import { IEntity } from '../entities/Entity';
+import { getHealthBarStats, resetHealthBarStats, IEntity } from '../entities/Entity';
 import { findPath, getPathfindingStats, resetPathfindingStats } from '../systems/Pathfinding';
 import { Economy } from '../systems/Economy';
 import { runAI, AIState } from '../systems/AI';
@@ -21,6 +21,7 @@ import { runPlayerAutopilot } from '../systems/PlayerAutopilot';
 import { EffectsSystem } from '../systems/EffectsSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { formationSlots } from '../systems/Formation';
+import { SpatialIndex } from '../systems/SpatialIndex';
 import { nearestReachableWalkable } from '../world/MapValidation';
 import {
   BUILDING_ART_DISPLAY,
@@ -29,7 +30,9 @@ import {
   getBuildingStageFrame
 } from '../assets/artManifest';
 
-export type GameInit = GameLaunchConfig;
+type PerfScenarioSize = 100 | 300 | 500;
+
+export type GameInit = GameLaunchConfig & { debugPerfSize?: PerfScenarioSize };
 
 type Point = { x: number; y: number };
 type RepathReason = 'command' | 'group' | 'group-fallback' | 'attack-move' | 'target' | 'resource' | 'return' | 'build' | 'stuck';
@@ -48,6 +51,7 @@ const GROUP_LANE_OFFSET_MAX = TILE * 3.5;
 const GROUP_SLOT_ARRIVAL_RADIUS = 12;
 const GROUP_SLOT_SETTLE_RADIUS = 34;
 const GROUP_SLOT_AVOID_FADE_RADIUS = TILE * 3;
+const PERF_UNIT_MIX: UnitKind[] = ['worker', 'footman', 'archer', 'knight', 'catapult', 'footman', 'archer', 'knight'];
 
 export class GameScene extends Phaser.Scene {
   map!: TileMap;
@@ -104,12 +108,26 @@ export class GameScene extends Phaser.Scene {
   private caravanRouteFlip = false;
   private debugCaravans = false;
   private debugPathfinding = false;
+  private debugPerf = false;
+  private debugPerfSize: PerfScenarioSize = 100;
+  private requestedPerfSize: PerfScenarioSize | null = null;
   private debugPathfindingUnits: Unit[] = [];
   private debugPathfindingText: Phaser.GameObjects.Text | null = null;
   private debugPathfindingNextLogMs = 0;
   private debugPathfindingStartMs = 0;
+  private debugPerfText: Phaser.GameObjects.Text | null = null;
+  private debugPerfNextDrawMs = 0;
+  private perfFrameSamples: number[] = [];
+  private perfPathLastSampleMs = 0;
+  private perfPathLastCalls = 0;
+  private perfPathCallsPerSec = 0;
+  private fogLastMs = 0;
+  private fogAvgMs = 0;
   private nextGroupMoveId = 1;
   private repathsThisFrame = 0;
+  private unitSpatial = new SpatialIndex<Unit>(TILE * 3);
+  private unitSpatialReady = false;
+  private unitQueryScratch: Unit[] = [];
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -121,6 +139,7 @@ export class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   init(data: GameInit): void {
+    this.requestedPerfSize = this.parsePerfScenarioSize(data?.debugPerfSize);
     const config = this.normalizeLaunchConfig(data);
     this.mode = config.mode;
     this.playerRace = config.playerRace;
@@ -141,10 +160,21 @@ export class GameScene extends Phaser.Scene {
     this.caravanRouteFlip = false;
     this.debugCaravans = false;
     this.debugPathfinding = false;
+    this.debugPerf = false;
+    this.debugPerfSize = 100;
     this.debugPathfindingUnits = [];
     this.debugPathfindingText = null;
     this.debugPathfindingNextLogMs = 0;
     this.debugPathfindingStartMs = 0;
+    this.debugPerfText = null;
+    this.debugPerfNextDrawMs = 0;
+    this.perfFrameSamples = [];
+    this.perfPathLastSampleMs = 0;
+    this.perfPathLastCalls = 0;
+    this.perfPathCallsPerSec = 0;
+    this.fogLastMs = 0;
+    this.fogAvgMs = 0;
+    this.unitSpatialReady = false;
     this.nextGroupMoveId = 1;
     this.repathsThisFrame = 0;
     this.aiState = {
@@ -179,7 +209,13 @@ export class GameScene extends Phaser.Scene {
     this.effects = new EffectsSystem(this);
     this.audio = new AudioSystem(this);
     this.debugPathfinding = this.isDebugPathfindingEnabled();
-    this.layout = this.debugPathfinding ? this.createDebugPathfindingLayout() : generateMap(this.seed);
+    this.debugPerf = !this.debugPathfinding && this.isDebugPerfEnabled();
+    this.debugPerfSize = this.requestedPerfSize ?? this.getDebugPerfSizeFromQuery();
+    this.layout = this.debugPathfinding
+      ? this.createDebugPathfindingLayout()
+      : this.debugPerf
+        ? this.createDebugPerfLayout()
+        : generateMap(this.seed);
     this.map = this.layout.map;
 
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -187,11 +223,12 @@ export class GameScene extends Phaser.Scene {
     this.effects.setupPostFX();
     this.effects.setupVignette();
 
-    this.economy.register(SIDE.player, this.playerRace, 430, 230, this.debugPathfinding ? 100 : 0);
-    this.economy.register(SIDE.ai, this.aiRace, 430, 230, this.debugPathfinding ? 100 : 0);
+    this.economy.register(SIDE.player, this.playerRace, 430, 230, this.debugPathfinding || this.debugPerf ? 1000 : 0);
+    this.economy.register(SIDE.ai, this.aiRace, 430, 230, this.debugPathfinding || this.debugPerf ? 1000 : 0);
 
     this.drawTiles();
     if (this.debugPathfinding) this.spawnDebugPathfindingScenario();
+    else if (this.debugPerf) this.spawnDebugPerfScenario(this.debugPerfSize);
     else this.spawnInitial();
     this.debugCaravans = this.isDebugCaravansEnabled();
     this.scheduleNextCaravan(true);
@@ -212,6 +249,7 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(2000);
     if (this.debugPathfinding) this.createDebugPathfindingOverlay();
+    if (this.debugPerf) this.createDebugPerfOverlay();
 
     this.setupInput();
 
@@ -340,6 +378,24 @@ export class GameScene extends Phaser.Scene {
     return new URLSearchParams(window.location.search).get('debugPathfinding') === '1';
   }
 
+  private isDebugPerfEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    const value = new URLSearchParams(window.location.search).get('debugPerf');
+    return value === '1' || value === '100' || value === '300' || value === '500';
+  }
+
+  private getDebugPerfSizeFromQuery(): PerfScenarioSize {
+    if (typeof window === 'undefined') return 100;
+    return this.parsePerfScenarioSize(new URLSearchParams(window.location.search).get('debugPerf')) ?? 100;
+  }
+
+  private parsePerfScenarioSize(value: unknown): PerfScenarioSize | null {
+    if (value === 100 || value === '100') return 100;
+    if (value === 300 || value === '300') return 300;
+    if (value === 500 || value === '500') return 500;
+    return null;
+  }
+
   private createDebugPathfindingLayout(): MapLayout {
     const map = new TileMap();
     for (let y = 0; y < map.h; y++) {
@@ -383,6 +439,27 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
+  private createDebugPerfLayout(): MapLayout {
+    const map = new TileMap();
+    for (let y = 0; y < map.h; y++) {
+      for (let x = 0; x < map.w; x++) {
+        map.set(x, y, (x + y) % 2 === 0 ? TileType.Grass : TileType.Grass2);
+        map.setWalkable(x, y, true);
+      }
+    }
+    for (let y = 24; y <= 40; y++) {
+      for (let x = 8; x <= 56; x++) map.set(x, y, TileType.Dirt);
+    }
+    return {
+      map,
+      playerBase: { tx: 16, ty: 32 },
+      aiBase: { tx: 48, ty: 32 },
+      goldMines: [],
+      trees: [],
+      decals: []
+    };
+  }
+
   private spawnDebugPathfindingScenario(): void {
     resetPathfindingStats();
     this.debugPathfindingUnits = [];
@@ -403,12 +480,60 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.centerOn(startX + TILE * 8, startY);
   }
 
+  private spawnDebugPerfScenario(totalUnits: PerfScenarioSize): void {
+    resetPathfindingStats();
+    resetHealthBarStats();
+    this.perfFrameSamples = [];
+    this.perfPathLastSampleMs = this.time.now;
+    this.perfPathLastCalls = 0;
+    this.perfPathCallsPerSec = 0;
+    this.fogLastMs = 0;
+    this.fogAvgMs = 0;
+
+    const perSide = Math.floor(totalUnits / 2);
+    const cols = Math.ceil(Math.sqrt(perSide));
+    const spacingX = 26;
+    const spacingY = 24;
+    const centerY = WORLD_H / 2;
+    const playerCenterX = WORLD_W * 0.31;
+    const aiCenterX = WORLD_W * 0.69;
+    const playerUnits: Unit[] = [];
+    const aiUnits: Unit[] = [];
+
+    for (let i = 0; i < perSide; i++) {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const ox = (col - (cols - 1) / 2) * spacingX;
+      const oy = (row - Math.floor(perSide / cols) / 2) * spacingY;
+      const kind = PERF_UNIT_MIX[i % PERF_UNIT_MIX.length];
+      playerUnits.push(this.spawnUnit(playerCenterX + ox, centerY + oy, kind, SIDE.player, this.playerRace));
+      aiUnits.push(this.spawnUnit(aiCenterX - ox, centerY + oy, kind, SIDE.ai, this.aiRace));
+    }
+
+    this.selected = [];
+    this.selectedBuilding = null;
+    this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
+    this.rebuildUnitSpatialIndex();
+    this.orderAttackMoveGroup(playerUnits, aiCenterX, centerY);
+    this.orderAttackMoveGroup(aiUnits, playerCenterX, centerY);
+    console.log(`[perf-debug] scenario=${totalUnits} units player=${playerUnits.length} ai=${aiUnits.length}`);
+  }
+
   private createDebugPathfindingOverlay(): void {
     this.debugPathfindingText = this.add.text(12, 86, '', {
       fontFamily: 'monospace',
       fontSize: '12px',
       color: '#d9ffe0',
       backgroundColor: 'rgba(0, 0, 0, 0.68)'
+    }).setScrollFactor(0).setDepth(2001).setPadding(8);
+  }
+
+  private createDebugPerfOverlay(): void {
+    this.debugPerfText = this.add.text(12, 86, '', {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: '#d9ffe0',
+      backgroundColor: 'rgba(0, 0, 0, 0.72)'
     }).setScrollFactor(0).setDepth(2001).setPadding(8);
   }
 
@@ -429,6 +554,7 @@ export class GameScene extends Phaser.Scene {
 
   private caravanSpawnsEnabled(): boolean {
     if (this.debugPathfinding) return false;
+    if (this.debugPerf) return false;
     if (this.mode === 'skirmish') return CARAVAN_CONFIG.enabledInSkirmish;
     return CARAVAN_CONFIG.enabledInStory;
   }
@@ -499,6 +625,11 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-F', () => this.tryTrainHotkey('footman'));
     kb.on('keydown-K', () => this.tryTrainHotkey('knight'));
     kb.on('keydown-C', () => this.tryTrainHotkey('catapult'));
+    if (this.debugPerf) {
+      kb.on('keydown-F6', () => this.restartDebugPerfScenario(100));
+      kb.on('keydown-F7', () => this.restartDebugPerfScenario(300));
+      kb.on('keydown-F8', () => this.restartDebugPerfScenario(500));
+    }
 
     for (let i = 1; i <= 9; i++) {
       kb.on(`keydown-${i}`, (ev: KeyboardEvent) => {
@@ -909,6 +1040,12 @@ export class GameScene extends Phaser.Scene {
     this.scene.restart({ ...this.launchConfig, seed: Math.floor(Math.random() * 100000) });
   }
 
+  private restartDebugPerfScenario(size: PerfScenarioSize): void {
+    if (!this.debugPerf) return;
+    this.scene.stop('UIScene');
+    this.scene.restart({ ...this.launchConfig, seed: this.seed, debugPerfSize: size });
+  }
+
   private setAttackMoveMode(v: boolean): void {
     this.attackMoveMode = v;
     this.game.events.emit('ui-mode', v ? 'Атака-движение: ЛКМ по земле или цели' : '');
@@ -1203,7 +1340,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.map.isWalkable(t.tx, t.ty)) return false;
     if (reserved.has(this.formationSlotKey(t.tx, t.ty))) return false;
 
-    for (const other of this.units) {
+    for (const other of this.queryUnitsInRadius(point.x, point.y, unit.radius + 48)) {
       if (!other.alive || ignored.has(other)) continue;
       const min = unit.radius + other.radius + 4;
       if (Phaser.Math.Distance.Between(point.x, point.y, other.x, other.y) < min) return false;
@@ -1336,12 +1473,15 @@ export class GameScene extends Phaser.Scene {
 
   update(_t: number, dt: number): void {
     if (this.gameOver) return;
+    if (this.debugPerf) this.recordPerfFrame(dt);
     this.repathsThisFrame = 0;
     this.updateCamera(dt);
     this.effects.ambientViewportTick(dt, this.cameras.main.worldView);
+    this.rebuildUnitSpatialIndex();
     runPlayerAutopilot(this);
     this.updateUnits(dt);
     this.updateCaravans(dt);
+    this.rebuildUnitSpatialIndex();
     this.updateBuildings(dt);
     this.updateProjectiles(dt);
     this.updateSelectionRingsFollow();
@@ -1349,14 +1489,16 @@ export class GameScene extends Phaser.Scene {
     this.lastCombatTickMs += dt;
     if (this.lastCombatTickMs >= 200) { this.combatTick(); this.lastCombatTickMs = 0; }
     this.lastFogTickMs += dt;
-    if (this.lastFogTickMs >= FOG.updateMs) { this.updateFog(); this.lastFogTickMs = 0; }
+    const fogUpdateMs = this.currentFogUpdateMs();
+    if (this.lastFogTickMs >= fogUpdateMs) { this.updateFog(); this.lastFogTickMs = 0; }
     this.lastAITickMs += dt;
-    if (!this.debugPathfinding && this.lastAITickMs >= DIFFICULTY[this.difficulty].aiDelayMs) {
+    if (!this.debugPathfinding && !this.debugPerf && this.lastAITickMs >= DIFFICULTY[this.difficulty].aiDelayMs) {
       runAI(this, this.aiState, this.difficulty);
       this.lastAITickMs = 0;
     }
     if (this.debugPathfinding) this.updateDebugPathfinding();
-    else this.checkVictory();
+    if (this.debugPerf) this.updateDebugPerf(fogUpdateMs);
+    else if (!this.debugPathfinding) this.checkVictory();
     this.pruneDead();
   }
 
@@ -1380,6 +1522,70 @@ export class GameScene extends Phaser.Scene {
     if (this.time.now < this.debugPathfindingNextLogMs) return;
     this.debugPathfindingNextLogMs = this.time.now + 2000;
     console.log(`[path-debug] ${lines.slice(1).join(' | ')}`);
+  }
+
+  private recordPerfFrame(dt: number): void {
+    this.perfFrameSamples.push(dt);
+    if (this.perfFrameSamples.length > 240) this.perfFrameSamples.shift();
+  }
+
+  private updateDebugPerf(fogUpdateMs: number): void {
+    if (!this.debugPerfText || this.time.now < this.debugPerfNextDrawMs) return;
+    this.debugPerfNextDrawMs = this.time.now + 250;
+
+    const frames = this.perfFrameSamples;
+    const avgFrame = frames.length ? frames.reduce((sum, v) => sum + v, 0) / frames.length : 0;
+    const sorted = [...frames].sort((a, b) => a - b);
+    const p95 = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] : 0;
+
+    const pathStats = getPathfindingStats();
+    const elapsedSec = Math.max(0.001, (this.time.now - this.perfPathLastSampleMs) / 1000);
+    this.perfPathCallsPerSec = (pathStats.calls - this.perfPathLastCalls) / elapsedSec;
+    this.perfPathLastCalls = pathStats.calls;
+    this.perfPathLastSampleMs = this.time.now;
+
+    const health = getHealthBarStats();
+    const particles = this.effects.fx.getStats();
+    const effects = this.effects.getStats();
+    const liveUnits = this.units.filter(u => u.alive).length;
+    const moving = this.units.filter(u => u.alive && (u.state === 'move' || u.state === 'attack_move')).length;
+    const lines = [
+      `debugPerf=${this.debugPerfSize}  F6=100 F7=300 F8=500`,
+      `frame avg=${avgFrame.toFixed(1)}ms p95=${p95.toFixed(1)}ms samples=${frames.length}`,
+      `units=${liveUnits} moving=${moving} projectiles=${this.projectiles.length}`,
+      `particles active~${particles.activeApprox} budget=${particles.budgetUsed}/${particles.budgetLimit} dropped=${particles.dropped}`,
+      `effects texts=${effects.floatingTexts} decals=${effects.decals} pools t/i=${effects.pooledTexts}/${effects.pooledImages}`,
+      `health calls=${health.calls} redraws=${health.redraws} hidden=${health.skippedHidden} full=${health.skippedFull} throttle=${health.skippedThrottle}`,
+      `fog last=${this.fogLastMs.toFixed(2)}ms avg=${this.fogAvgMs.toFixed(2)}ms interval=${fogUpdateMs}ms`,
+      `path ${this.perfPathCallsPerSec.toFixed(1)}/s calls=${pathStats.calls} avg=${pathStats.avgMs.toFixed(2)}ms max=${pathStats.maxMs.toFixed(2)}ms`
+    ];
+    this.debugPerfText.setText(lines.join('\n'));
+  }
+
+  private rebuildUnitSpatialIndex(): void {
+    this.unitSpatial.rebuild(this.units);
+    this.unitSpatialReady = true;
+  }
+
+  private queryUnitsInRadius(x: number, y: number, radius: number): Unit[] {
+    if (this.unitSpatialReady) return this.unitSpatial.queryRadius(x, y, radius, this.unitQueryScratch);
+    this.unitQueryScratch.length = 0;
+    const r2 = radius * radius;
+    for (const unit of this.units) {
+      if (!unit.alive) continue;
+      const dx = unit.x - x;
+      const dy = unit.y - y;
+      if (dx * dx + dy * dy <= r2) this.unitQueryScratch.push(unit);
+    }
+    return this.unitQueryScratch;
+  }
+
+  private currentFogUpdateMs(): number {
+    const active = this.units.length + this.projectiles.length + this.caravans.length;
+    if (active >= 500) return FOG.updateMs * 2;
+    if (active >= 300) return Math.round(FOG.updateMs * 1.5);
+    if (active >= 100) return Math.round(FOG.updateMs * 1.2);
+    return FOG.updateMs;
   }
 
   private updateSelectionRingsFollow(): void {
@@ -1657,7 +1863,7 @@ export class GameScene extends Phaser.Scene {
     if (this.isSettledAtGroupSlot(u, GROUP_SLOT_SETTLE_RADIUS)) return 1;
     const distToNext = Phaser.Math.Distance.Between(u.x, u.y, next.x, next.y);
     let slow = 1;
-    for (const other of this.units) {
+    for (const other of this.queryUnitsInRadius(u.x, u.y, u.radius + 84)) {
       if (!other.alive || other === u || other.side !== u.side) continue;
       const ox = other.x - u.x;
       const oy = other.y - u.y;
@@ -1679,7 +1885,7 @@ export class GameScene extends Phaser.Scene {
     let avoidX = 0;
     let avoidY = 0;
     if (avoidanceScale > 0) {
-      for (const other of this.units) {
+      for (const other of this.queryUnitsInRadius(u.x, u.y, u.radius + 72)) {
         if (!other.alive || other === u || other.side !== u.side) continue;
         const dx = u.x - other.x;
         const dy = u.y - other.y;
@@ -1755,7 +1961,7 @@ export class GameScene extends Phaser.Scene {
   private acquireTarget(u: Unit, range: number): IEntity | null {
     let best: IEntity | null = null;
     let bestD = Infinity;
-    for (const o of this.units) {
+    for (const o of this.queryUnitsInRadius(u.x, u.y, range)) {
       if (!o.alive || o.side === u.side || o.side === SIDE.neutral) continue;
       const d = Phaser.Math.Distance.Between(u.x, u.y, o.x, o.y);
       if (d < range && d < bestD) { best = o; bestD = d; }
@@ -1830,7 +2036,7 @@ export class GameScene extends Phaser.Scene {
   private acquireBuildingTarget(b: Building): IEntity | null {
     let best: IEntity | null = null;
     let bestD = Infinity;
-    for (const u of this.units) {
+    for (const u of this.queryUnitsInRadius(b.x, b.y, b.range)) {
       if (!u.alive || u.side === b.side || u.side === SIDE.neutral) continue;
       const d = Phaser.Math.Distance.Between(b.x, b.y, u.x, u.y);
       if (d <= b.range && d < bestD) { best = u; bestD = d; }
@@ -1919,7 +2125,7 @@ export class GameScene extends Phaser.Scene {
 
   private findSplashTargets(primary: IEntity, sourceSide: Side, radius: number): IEntity[] {
     const out: IEntity[] = [primary];
-    for (const u of this.units) {
+    for (const u of this.queryUnitsInRadius(primary.x, primary.y, radius)) {
       if (!u.alive || u === primary || u.side === sourceSide || u.side === SIDE.neutral) continue;
       if (Phaser.Math.Distance.Between(primary.x, primary.y, u.x, u.y) <= radius) out.push(u);
     }
@@ -1992,10 +2198,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateFog(): void {
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.fog.dimVisible();
+    const revealedUnitTiles = new Set<number>();
     for (const u of this.units) {
       if (!u.alive || u.side !== SIDE.player) continue;
       const { tx, ty } = this.map.worldToTile(u.x, u.y);
+      const key = ty * this.map.w + tx;
+      if (revealedUnitTiles.has(key)) continue;
+      revealedUnitTiles.add(key);
       this.fog.revealCircle(tx, ty, u.sight);
     }
     for (const b of this.buildings) {
@@ -2005,6 +2216,9 @@ export class GameScene extends Phaser.Scene {
     }
     this.fog.redraw();
     this.applyVisibility();
+    const elapsed = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+    this.fogLastMs = elapsed;
+    this.fogAvgMs = this.fogAvgMs === 0 ? elapsed : this.fogAvgMs * 0.9 + elapsed * 0.1;
   }
 
   private initialReveal(): void {
