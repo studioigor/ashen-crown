@@ -168,23 +168,30 @@ export class Unit implements IEntity {
     if (!this.alive) return;
     this.alive = false;
     this.state = 'dead';
-    if (this.usingArtSheet && this.playArtAnimation('death', true)) {
+    this.attackBusy = false;
+    this.workBusy = false;
+    if (this.usingArtSheet) {
       const scene = this.sprite.scene;
-      const parts = [this.sprite, this.shadow, this.cargoBadge].filter((p): p is Phaser.GameObjects.Sprite | Phaser.GameObjects.Image => !!p);
-      scene.tweens.add({
-        targets: parts,
-        alpha: 0,
-        duration: 360,
-        delay: 560,
-        ease: 'Cubic.easeIn',
-        onComplete: () => {
-          this.sprite.destroy();
-          this.shadow.destroy();
-          this.cargoBadge?.destroy();
-        }
-      });
-      this.hb.destroy();
-      return;
+      const deathKey = this.playArtAnimation('death', true);
+      if (deathKey) {
+        this.hb.destroy();
+        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + deathKey, () => {
+          const parts = [this.sprite, this.shadow, this.cargoBadge].filter((p): p is Phaser.GameObjects.Sprite | Phaser.GameObjects.Image => !!p);
+          scene.tweens.add({
+            targets: parts,
+            alpha: 0,
+            duration: 360,
+            ease: 'Cubic.easeIn',
+            onComplete: () => {
+              this.sprite.destroy();
+              this.shadow.destroy();
+              this.cargoBadge?.destroy();
+              this.cargoBadge = null;
+            }
+          });
+        });
+        return;
+      }
     }
     // Death animation on sprite (then destroy all parts)
     const scene = this.sprite.scene;
@@ -208,6 +215,7 @@ export class Unit implements IEntity {
         this.shadow.destroy();
         this.weapon?.destroy();
         this.cargoBadge?.destroy();
+        this.cargoBadge = null;
       }
     });
     this.hb.destroy();
@@ -246,9 +254,10 @@ export class Unit implements IEntity {
     if (this.usingArtSheet) {
       if (this.attackBusy) return;
       this.faceTowardActiveTarget();
-      if (this.playArtAnimation('attack', true)) {
+      const attackKey = this.playArtAnimation('attack', true);
+      if (attackKey) {
         this.attackBusy = true;
-        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + attackKey, () => {
           this.attackBusy = false;
           if (this.alive) this.playArtAnimation('idle', true);
         });
@@ -325,8 +334,9 @@ export class Unit implements IEntity {
     this.workBusy = true;
     if (this.usingArtSheet) {
       this.faceTowardActiveTarget();
-      if (this.playArtAnimation(this.unitKind === 'worker' ? 'work' : 'attack', true)) {
-        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      const workKey = this.playArtAnimation(this.unitKind === 'worker' ? 'work' : 'attack', true);
+      if (workKey) {
+        this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE_KEY + workKey, () => {
           this.workBusy = false;
           if (this.alive) this.playArtAnimation('idle', true);
         });
@@ -382,7 +392,7 @@ export class Unit implements IEntity {
     if (this.usingArtSheet) {
       if (moving) {
         this.facing = getUnitFacingFromVector(dx, dy, this.facing);
-        this.playArtAnimation('walk');
+        if (!this.attackBusy && !this.workBusy) this.playArtAnimation('walk');
         const now = this.sprite.scene.time.now;
         if (now - this.lastStepDust > VISUALS.stepDustMs) {
           this.lastStepDust = now;
@@ -457,17 +467,17 @@ export class Unit implements IEntity {
     this.facing = getUnitFacingFromVector(target.x - this.sprite.x, target.y - this.sprite.y, this.facing);
   }
 
-  private playArtAnimation(anim: UnitAnimState, restart = false): boolean {
-    if (!this.usingArtSheet) return false;
+  private playArtAnimation(anim: UnitAnimState, restart = false): string | null {
+    if (!this.usingArtSheet) return null;
     let state = anim;
     if (state === 'work' && !unitAnimReady(this.sprite.scene, this.unitKind, this.race, 'work')) state = 'attack';
-    if (!unitAnimReady(this.sprite.scene, this.unitKind, this.race, state)) return false;
+    if (!unitAnimReady(this.sprite.scene, this.unitKind, this.race, state)) return null;
     const key = unitAnimKey(this.unitKind, this.race, state, this.facing);
-    if (!this.sprite.scene.anims.exists(key)) return false;
-    if (!restart && this.currentArtAnim === state && this.sprite.anims.currentAnim?.key === key) return true;
+    if (!this.sprite.scene.anims.exists(key)) return null;
+    if (!restart && this.currentArtAnim === state && this.sprite.anims.currentAnim?.key === key) return key;
     this.currentArtAnim = state;
     this.sprite.play(key, restart);
-    return true;
+    return key;
   }
 
   private updateCargoBadge(): void {

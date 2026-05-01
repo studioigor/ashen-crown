@@ -325,7 +325,10 @@ export function getUnitFacingFromVector(dx: number, dy: number, fallback: UnitFa
 }
 
 export function unitArtReady(scene: Phaser.Scene, kind: UnitKind, race: Race): boolean {
-  return scene.textures.exists(unitSheetKey(kind, race, 'idle'));
+  const required: UnitAnimState[] = kind === 'worker'
+    ? ['idle', 'walk', 'attack', 'death', 'work']
+    : ['idle', 'walk', 'attack', 'death'];
+  return required.every((anim) => scene.textures.exists(unitSheetKey(kind, race, anim)));
 }
 
 export function unitAnimReady(scene: Phaser.Scene, kind: UnitKind, race: Race, anim: UnitAnimState): boolean {

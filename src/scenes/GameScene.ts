@@ -1308,6 +1308,7 @@ export class GameScene extends Phaser.Scene {
 
   private applyVisibility(): void {
     for (const u of this.units) {
+      if (!u.alive) continue;
       const { tx, ty } = this.map.worldToTile(u.x, u.y);
       const visible = u.side === SIDE.player || this.fog.isVisible(tx, ty);
       u.sprite.setVisible(visible);
@@ -1335,13 +1336,38 @@ export class GameScene extends Phaser.Scene {
   }
 
   private pruneDead(): void {
-    this.units = this.units.filter(u => {
-      if (!u.alive) {
-        this.economy.removeFood(u.side, u.food);
-        return false;
+    const deadUnits = this.units.filter(u => !u.alive);
+    if (deadUnits.length > 0) {
+      const deadUnitIds = new Set(deadUnits.map(u => u.id));
+      for (const u of deadUnits) this.economy.removeFood(u.side, u.food);
+      this.units = this.units.filter(u => u.alive);
+
+      let selectionChanged = false;
+      const selectedCount = this.selected.length;
+      this.selected = this.selected.filter(u => u.alive);
+      if (this.selected.length !== selectedCount) selectionChanged = true;
+
+      for (const key of Object.keys(this.controlGroups)) {
+        const groupId = Number(key);
+        const group = this.controlGroups[groupId];
+        const aliveGroup = group.filter(u => u.alive);
+        if (aliveGroup.length > 0) this.controlGroups[groupId] = aliveGroup;
+        else delete this.controlGroups[groupId];
       }
-      return true;
-    });
+
+      for (const u of this.units) {
+        if (u.targetUnit && deadUnitIds.has(u.targetUnit.id)) u.targetUnit = null;
+      }
+
+      for (const r of this.selectionRings) {
+        const u = r.getData('follow') as Unit | undefined;
+        if (!u || deadUnitIds.has(u.id) || !u.alive) r.destroy();
+      }
+      this.selectionRings = this.selectionRings.filter(r => r.active);
+
+      if (selectionChanged) this.game.events.emit('selection-changed', { units: this.selected, building: this.selectedBuilding });
+    }
+
     this.buildings = this.buildings.filter(b => {
       if (!b.alive) {
         const def = BUILDING[b.buildingKind];
@@ -1352,7 +1378,6 @@ export class GameScene extends Phaser.Scene {
       return true;
     });
     this.resources = this.resources.filter(r => r.alive);
-    this.selected = this.selected.filter(u => u.alive);
   }
 
   private checkVictory(): void {
