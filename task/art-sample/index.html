@@ -290,7 +290,7 @@
           <h1>Ashen Crown Art Sample</h1>
           <p class="subhead">
             Просмотр runtime-ассетов после нормализации: все юниты, направления,
-            анимации, building stages и ключевые gameplay-ассеты. Отрисовка юнитов
+            анимации, building stages, overlays и gameplay-ассеты. Отрисовка юнитов
             использует uniform scale без растяжения квадратных кадров.
           </p>
         </div>
@@ -321,6 +321,9 @@
       <h2>Building Stages</h2>
       <div class="buildings-grid" id="buildings"></div>
 
+      <h2>Building Damage And Destruction</h2>
+      <div class="asset-grid" id="buildingOverlays"></div>
+
       <h2>Gameplay Assets</h2>
       <div class="asset-grid" id="assets"></div>
     </main>
@@ -328,6 +331,7 @@
     <script>
       const root = "../../public/assets/art";
       const directions = ["south", "east", "north", "west"];
+      let enabledKeys = null;
       const animMeta = {
         idle: { frames: 4, fps: 5 },
         walk: { frames: 8, fps: 10 },
@@ -369,6 +373,7 @@
         ["terrain", "Dirt Road", `${root}/terrain/tile_dirt.png`],
         ["terrain", "Forest Floor", `${root}/terrain/tile_forest.png`],
         ["terrain", "Stone", `${root}/terrain/tile_stone.png`],
+        ["terrain", "Water Alias", `${root}/terrain/tile_water.png`, "tile_water"],
         ["terrain", "Water 0", `${root}/terrain/tile_water_0.png`],
         ["terrain", "Water 1", `${root}/terrain/tile_water_1.png`],
         ["terrain", "Water 2", `${root}/terrain/tile_water_2.png`],
@@ -389,6 +394,8 @@
         ["fx", "Blood", `${root}/fx/px_blood.png`],
         ["fx", "Leaf", `${root}/fx/px_leaf.png`],
         ["fx", "Star", `${root}/fx/px_star.png`],
+        ["fx", "Ember", `${root}/fx/px_ember.png`],
+        ["fx", "Rune", `${root}/fx/px_rune.png`],
         ["fx", "Smoke Dark", `${root}/fx/px_smoke_dark.png`],
         ["fx", "Smoke Light", `${root}/fx/px_smoke_light.png`],
         ["fx", "Dust", `${root}/fx/px_dust.png`],
@@ -446,6 +453,39 @@
           images.set(src, img);
         }
         return images.get(src);
+      }
+
+      function unitSheetKey(kind, race, anim) {
+        return `art_unit_${kind}_${race}_${anim}`;
+      }
+
+      function buildingSheetKey(kind, race) {
+        return `art_building_${kind}_${race}`;
+      }
+
+      function keyFromAssetPath(src) {
+        const file = src.split("/").pop().replace(/\.png$/, "");
+        if (src.includes("/ui/icons/")) return `icon_${file}`;
+        if (file === "panel_frame") return "ui_panel_frame";
+        if (file === "tooltip_frame") return "ui_tooltip_frame";
+        if (file === "minimap_frame") return "ui_minimap_frame";
+        return file;
+      }
+
+      function keyEnabled(key) {
+        return !enabledKeys || enabledKeys.has(key);
+      }
+
+      async function loadEnabledKeys() {
+        try {
+          const response = await fetch(`${root}/manifest.generated.json`, { cache: "no-store" });
+          if (!response.ok) return null;
+          const manifest = await response.json();
+          if (manifest.loadAll) return null;
+          return new Set(manifest.enabledKeys || []);
+        } catch {
+          return null;
+        }
       }
 
       function unitSheet(unit, anim) {
@@ -560,6 +600,8 @@
         `;
         const grid = section.querySelector(".anim-grid");
         for (const anim of unit.anims) {
+          const key = unit.kind === "caravan" ? `art_unit_caravan_neutral_${anim}` : unitSheetKey(unit.kind, unit.race, anim);
+          if (!keyEnabled(key)) continue;
           const meta = animMeta[anim];
           const card = document.createElement("article");
           card.className = "anim-card";
@@ -594,6 +636,7 @@
       function makeBuildings() {
         const target = document.querySelector("#buildings");
         for (const [race, kind, label, frame, display] of buildings) {
+          if (!keyEnabled(buildingSheetKey(kind, race))) continue;
           const card = document.createElement("article");
           card.className = "building-card";
           card.dataset.race = race;
@@ -631,13 +674,44 @@
         }
       }
 
+      function makeAssetCard(group, label, src, key, race = "") {
+        const card = document.createElement("article");
+        card.className = "asset-card";
+        if (race) card.dataset.race = race;
+        const img = document.createElement("img");
+        img.alt = label;
+        img.src = src;
+        img.addEventListener("error", () => {
+          card.dataset.missing = "true";
+        });
+        card.innerHTML = `<h3>${label}</h3><span class="tag">${group} / ${key}</span>`;
+        card.append(img);
+        return card;
+      }
+
+      function makeBuildingOverlays() {
+        const target = document.querySelector("#buildingOverlays");
+        for (const [race, kind, label] of buildings) {
+          for (const suffix of ["damage", "destruction"]) {
+            const key = `${buildingSheetKey(kind, race)}_${suffix}`;
+            if (!keyEnabled(key)) continue;
+            target.append(makeAssetCard(
+              "building overlay",
+              `${label} ${suffix}`,
+              `${root}/buildings/${race}/${kind}_${suffix}.png`,
+              key,
+              race,
+            ));
+          }
+        }
+      }
+
       function makeAssets() {
         const target = document.querySelector("#assets");
-        for (const [group, label, src] of assets) {
-          const card = document.createElement("article");
-          card.className = "asset-card";
-          card.innerHTML = `<h3>${label}</h3><span class="tag">${group}</span><img alt="${label}" src="${src}" />`;
-          target.append(card);
+        for (const [group, label, src, explicitKey] of assets) {
+          const key = explicitKey || keyFromAssetPath(src);
+          if (!keyEnabled(key)) continue;
+          target.append(makeAssetCard(group, label, src, key));
         }
       }
 
@@ -654,11 +728,17 @@
         requestAnimationFrame(tick);
       }
 
-      for (const unit of units) document.querySelector("#units").append(makeUnitSection(unit));
-      makeBuildings();
-      makeAssets();
+      async function init() {
+        enabledKeys = await loadEnabledKeys();
+        for (const unit of units) document.querySelector("#units").append(makeUnitSection(unit));
+        makeBuildings();
+        makeBuildingOverlays();
+        makeAssets();
+        applyFilter();
+      }
 
       document.querySelector("#raceFilter").addEventListener("change", applyFilter);
+      init();
       requestAnimationFrame(tick);
     </script>
   </body>

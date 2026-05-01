@@ -4,16 +4,17 @@ from __future__ import annotations
 import json
 import math
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "public/assets/art/source"
 OUT = ROOT / "public/assets/art"
+SAMPLE = ROOT / "task/art-sample"
 DEBUG = ROOT / "task/art-sample/normalized"
 
 UNIT_DIRECTIONS = ["south", "east", "north", "west"]
@@ -44,6 +45,14 @@ BUILDING_FRAME = {
     "tower": (128, 128),
 }
 
+BUILDING_DISPLAY = {
+    "townhall": (96, 96),
+    "farm": (64, 64),
+    "barracks": (96, 96),
+    "workshop": (96, 96),
+    "tower": (64, 64),
+}
+
 UNIT_SOURCES = [
     ("alliance", "worker", SOURCE / "units_alliance_worker.png"),
     ("alliance", "footman", SOURCE / "units_alliance_footman.png"),
@@ -68,6 +77,67 @@ BUILDING_SOURCES = [
     ("horde", "barracks", SOURCE / "building_horde_barracks.png"),
     ("horde", "workshop", SOURCE / "building_horde_workshop.png"),
     ("horde", "tower", SOURCE / "building_horde_tower.png"),
+]
+
+TERRAIN_NAMES = ["tile_grass", "tile_grass2", "tile_dirt", "tile_forest", "tile_stone", "tile_water_0", "tile_water_1", "tile_water_2"]
+
+RESOURCE_ASSETS = {
+    "goldmine": ((261, 205), (96, 96), "center"),
+    "goldmine_damaged": ((702, 215), (96, 96), "center"),
+    "goldmine_depleted": ((1102, 220), (96, 96), "center"),
+    "tree": ((1493, 221), (32, 32), "bottom"),
+    "tree_stump": ((194, 503), (32, 32), "bottom"),
+    "tree_log": ((562, 510), (40, 24), "center"),
+    "tree_trunk": ((827, 503), (20, 30), "center"),
+    "tree_canopy": ((1125, 503), (36, 36), "center"),
+}
+
+FX_ASSETS = {
+    "projectile_arrow": ((188, 151), (16, 8)),
+    "projectile_stone": ((425, 154), (14, 14)),
+    "projectile_tower": ((702, 152), (18, 18)),
+    "px_spark": ((956, 162), (16, 16)),
+    "px_flame": ((1162, 153), (18, 18)),
+    "px_blood": ((1345, 163), (12, 16)),
+    "px_leaf": ((1519, 151), (16, 16)),
+    "px_star": ((199, 335), (16, 16)),
+    "px_ember": ((425, 354), (12, 12)),
+    "px_rune": ((657, 340), (18, 22)),
+    "px_crater": ((949, 351), (34, 24)),
+    "px_arrow_trail": ((1401, 345), (38, 10)),
+    "px_debris_1": ((175, 557), (14, 14)),
+    "px_debris_2": ((353, 555), (14, 14)),
+    "px_debris_3": ((530, 555), (14, 14)),
+    "px_smoke_dark": ((175, 760), (24, 24)),
+    "px_dust": ((425, 760), (24, 24)),
+    "px_smoke_light": ((701, 760), (28, 28)),
+    "px_mist": ((1100, 760), (28, 22)),
+    "px_shockwave": ((1400, 760), (36, 36)),
+    "px_glow": ((1545, 760), (20, 20)),
+}
+
+CURSOR_ASSETS = {
+    "cursor_default": ((204, 185), (32, 32)),
+    "cursor_attack": ((486, 193), (32, 32)),
+    "cursor_build_ok": ((802, 186), (36, 36)),
+    "cursor_build_no": ((1122, 186), (36, 36)),
+    "cursor_gather": ((1435, 192), (36, 36)),
+    "ring_select_s": ((180, 474), (36, 24)),
+    "ring_select_m": ((509, 473), (52, 34)),
+    "ring_select_l": ((932, 471), (72, 44)),
+}
+
+UI_FRAME_ASSETS = {
+    "panel_frame": ((498, 742), (512, 168), "ui_panel_frame"),
+    "tooltip_frame": ((770, 363), (256, 192), "ui_tooltip_frame"),
+    "minimap_frame": ((247, 385), (192, 192), "ui_minimap_frame"),
+}
+
+ICON_NAMES = [
+    "stop", "attack_move", "build", "repair", "rally",
+    "worker", "footman", "archer", "knight", "catapult",
+    "return_cargo", "gather_gold", "gather_lumber", "patrol", "hold_position",
+    "autopilot", "formation", "support", "gold", "lumber",
 ]
 
 UNIT_RUNTIME_SEQUENCES = {
@@ -139,6 +209,21 @@ class Component:
     center: tuple[float, float]
 
 
+@dataclass
+class AuditStats:
+    missing_sources: list[str] = field(default_factory=list)
+    edge_warnings: list[str] = field(default_factory=list)
+    unit_sheets: int = 0
+    unit_assets: int = 0
+    building_sheets: int = 0
+    building_overlay_assets: int = 0
+    terrain_assets: int = 0
+    resource_assets: int = 0
+    fx_assets: int = 0
+    ui_assets: int = 0
+    icon_assets: int = 0
+
+
 def ensure_dirs() -> None:
     for path in [
         OUT / "units/alliance",
@@ -207,6 +292,58 @@ def keyed_image(im: Image.Image, kind: str | None = None) -> Image.Image:
 
 def alpha_bbox(im: Image.Image) -> tuple[int, int, int, int] | None:
     return im.getchannel("A").getbbox()
+
+
+def note_missing_source(audit: AuditStats, path: Path) -> None:
+    audit.missing_sources.append(path.name)
+
+
+def edge_touch_sides(bbox: tuple[int, int, int, int], size: tuple[int, int]) -> list[str]:
+    w, h = size
+    x1, y1, x2, y2 = bbox
+    sides: list[str] = []
+    if x1 <= 0:
+        sides.append("left")
+    if y1 <= 0:
+        sides.append("top")
+    if x2 >= w:
+        sides.append("right")
+    if y2 >= h:
+        sides.append("bottom")
+    return sides
+
+
+def audit_frame_edges(audit: AuditStats, label: str, im: Image.Image) -> None:
+    bbox = alpha_bbox(im)
+    if not bbox:
+        return
+    sides = edge_touch_sides(bbox, im.size)
+    if sides:
+        audit.edge_warnings.append(f"{label}: {','.join(sides)} bbox={bbox} size={im.size}")
+
+
+def audit_sheet_edges(
+    audit: AuditStats,
+    label: str,
+    sheet: Image.Image,
+    frame: tuple[int, int],
+    rows: int,
+    cols: int,
+    row_names: list[str] | None = None,
+    col_names: list[str] | None = None,
+) -> None:
+    fw, fh = frame
+    for r in range(rows):
+        for c in range(cols):
+            name_parts = [label]
+            if row_names:
+                name_parts.append(row_names[r])
+            if col_names:
+                name_parts.append(col_names[c])
+            else:
+                name_parts.append(f"frame{c}")
+            crop = sheet.crop((c * fw, r * fh, (c + 1) * fw, (r + 1) * fh))
+            audit_frame_edges(audit, " ".join(name_parts), crop)
 
 
 def padded_bbox(bbox: tuple[int, int, int, int], pad: int, limit: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -385,11 +522,12 @@ def render_unit_sheet(
     return sheet
 
 
-def process_units(report: list[str], enabled: set[str]) -> None:
+def process_units(audit: AuditStats, enabled: set[str]) -> None:
     for race, kind, path in UNIT_SOURCES:
         if not path.exists():
-            report.append(f"missing unit source: {path.name}")
+            note_missing_source(audit, path)
             continue
+        audit.unit_sheets += 1
         frame = (128, 128)
         poses = unit_pose_map(path, kind, frame)
         target_dir = OUT / "units" / race
@@ -403,17 +541,19 @@ def process_units(report: list[str], enabled: set[str]) -> None:
         for anim, sequence in UNIT_RUNTIME_SEQUENCES[seq_key].items():
             sheet = render_unit_sheet(poses, sequence, frame, scale=unit_scale)
             sheet.save(target_dir / f"{kind}_{anim}.png")
+            audit_sheet_edges(audit, f"unit {race}/{kind} {anim}", sheet, frame, len(UNIT_DIRECTIONS), len(sequence), UNIT_DIRECTIONS)
             enabled.add(f"art_unit_{kind}_{race}_{anim}")
+            audit.unit_assets += 1
         debug = Image.new("RGBA", (256 * debug_cols, 256 * 4), (0, 0, 0, 0))
         scale = compute_scale_for_sequence(poses, [(name, 0) for name in all_names], (256, 256), 12)
         for r, direction in enumerate(UNIT_DIRECTIONS):
             for c, name in enumerate(all_names):
                 debug.alpha_composite(normalize_crop(poses[direction][name], (256, 256), scale), (c * 256, r * 256))
         debug.save(DEBUG / f"unit_{race}_{kind}_normalized.png")
-        report.append(f"unit {race}/{kind}: ok")
 
     caravan_path = SOURCE / "future_caravan.png"
     if caravan_path.exists():
+        audit.unit_sheets += 1
         frame = (192, 128)
         poses = unit_pose_map(caravan_path, "caravan", frame)
         target_dir = OUT / "future"
@@ -422,15 +562,19 @@ def process_units(report: list[str], enabled: set[str]) -> None:
         for anim, sequence in UNIT_RUNTIME_SEQUENCES["caravan"].items():
             sheet = render_unit_sheet(poses, sequence, frame, scale=unit_scale)
             sheet.save(target_dir / f"caravan_{anim}.png")
+            audit_sheet_edges(audit, f"unit neutral/caravan {anim}", sheet, frame, len(UNIT_DIRECTIONS), len(sequence), UNIT_DIRECTIONS)
             enabled.add(f"art_unit_caravan_neutral_{anim}")
-        report.append("future caravan: ok")
+            audit.unit_assets += 1
+    else:
+        note_missing_source(audit, caravan_path)
 
 
-def process_buildings(report: list[str], enabled: set[str]) -> None:
+def process_buildings(audit: AuditStats, enabled: set[str]) -> None:
     for race, kind, path in BUILDING_SOURCES:
         if not path.exists():
-            report.append(f"missing building source: {path.name}")
+            note_missing_source(audit, path)
             continue
+        audit.building_sheets += 1
         raw = Image.open(path)
         keyed = keyed_image(raw, "green")
         frame = BUILDING_FRAME[kind]
@@ -462,143 +606,113 @@ def process_buildings(report: list[str], enabled: set[str]) -> None:
         target_dir = OUT / "buildings" / race
         target_dir.mkdir(parents=True, exist_ok=True)
         sheet.save(target_dir / f"{kind}.png")
+        audit_sheet_edges(audit, f"building {race}/{kind}", sheet, frame, 1, cols, col_names=["stage1", "stage2", "final", "destroying", "ruin"])
         enabled.add(f"art_building_{kind}_{race}")
-        report.append(f"building {race}/{kind}: ok")
 
 
 def nearest(comps: list[Component], x: float, y: float) -> Component:
     return min(comps, key=lambda c: (c.center[0] - x) ** 2 + (c.center[1] - y) ** 2)
 
 
-def save_component_asset(keyed: Image.Image, comp: Component, path: Path, size: tuple[int, int], pad: int = 7, center_y: str = "center") -> None:
+def save_component_asset(keyed: Image.Image, comp: Component, path: Path, size: tuple[int, int], pad: int = 7, center_y: str = "center") -> Image.Image:
     crop = crop_keyed(keyed, comp.bbox, pad=pad)
     bbox = alpha_bbox(crop)
     if not bbox:
-        Image.new("RGBA", size, (0, 0, 0, 0)).save(path)
-        return
+        out = Image.new("RGBA", size, (0, 0, 0, 0))
+        out.save(path)
+        return out
     trimmed = crop.crop(bbox)
     scale = min((size[0] - 2) / trimmed.width, (size[1] - 2) / trimmed.height)
-    normalize_crop(trimmed, size, scale, center_y=center_y).save(path)
+    out = normalize_crop(trimmed, size, scale, center_y=center_y)
+    out.save(path)
+    return out
 
 
-def process_resources(report: list[str], enabled: set[str]) -> None:
+def process_resources(audit: AuditStats, enabled: set[str]) -> None:
     path = SOURCE / "resources_and_decals.png"
     if not path.exists():
+        note_missing_source(audit, path)
         return
     keyed = keyed_image(Image.open(path), "magenta")
     comps = components(keyed, min_pixels=70)
     resource_dir = OUT / "resources"
     resource_dir.mkdir(parents=True, exist_ok=True)
-    mapping = {
-        "goldmine": ((261, 205), (96, 96), "center"),
-        "goldmine_damaged": ((702, 215), (96, 96), "center"),
-        "goldmine_depleted": ((1102, 220), (96, 96), "center"),
-        "tree": ((1493, 221), (32, 32), "bottom"),
-        "tree_stump": ((194, 503), (32, 32), "bottom"),
-        "tree_log": ((562, 510), (40, 24), "center"),
-        "tree_trunk": ((827, 503), (20, 30), "center"),
-        "tree_canopy": ((1125, 503), (36, 36), "center"),
-    }
-    for name, (point, size, center_y) in mapping.items():
-        save_component_asset(keyed, nearest(comps, *point), resource_dir / f"{name}.png", size, center_y=center_y)
-    for key in mapping:
-        enabled.add(key)
-    report.append("resources: ok")
+    for name, (point, size, center_y) in RESOURCE_ASSETS.items():
+        out = save_component_asset(keyed, nearest(comps, *point), resource_dir / f"{name}.png", size, center_y=center_y)
+        audit_frame_edges(audit, f"resource {name}", out)
+        enabled.add(name)
+        audit.resource_assets += 1
 
 
-def process_terrain(report: list[str], enabled: set[str]) -> None:
+def process_terrain(audit: AuditStats, enabled: set[str]) -> None:
     terrain = SOURCE / "terrain_tiles.png"
     if terrain.exists():
         im = Image.open(terrain).convert("RGBA")
-        names = ["tile_grass", "tile_grass2", "tile_dirt", "tile_forest", "tile_stone", "tile_water_0", "tile_water_1", "tile_water_2"]
         target_dir = OUT / "terrain"
         target_dir.mkdir(parents=True, exist_ok=True)
-        for i, name in enumerate(names):
+        for i, name in enumerate(TERRAIN_NAMES):
             r, c = divmod(i, 4)
             crop = im.crop((round(c * im.width / 4), round(r * im.height / 2), round((c + 1) * im.width / 4), round((r + 1) * im.height / 2)))
             crop.resize((32, 32), Image.Resampling.LANCZOS).save(target_dir / f"{name}.png")
             enabled.add(name)
+            audit.terrain_assets += 1
         shutil.copyfile(target_dir / "tile_water_0.png", target_dir / "tile_water.png")
         enabled.add("tile_water")
+        audit.terrain_assets += 1
+    else:
+        note_missing_source(audit, terrain)
     water = SOURCE / "water_frame_3.png"
     if water.exists():
         Image.open(water).convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS).save(OUT / "terrain/tile_water_3.png")
         enabled.add("tile_water_3")
-    report.append("terrain: ok")
+        audit.terrain_assets += 1
+    else:
+        note_missing_source(audit, water)
 
 
-def process_fx(report: list[str], enabled: set[str]) -> None:
+def process_fx(audit: AuditStats, enabled: set[str]) -> None:
     path = SOURCE / "projectiles_particles_fx.png"
     if not path.exists():
+        note_missing_source(audit, path)
         return
     keyed = keyed_image(Image.open(path), "magenta")
     comps = components(keyed, min_pixels=50)
     fx_dir = OUT / "fx"
     fx_dir.mkdir(parents=True, exist_ok=True)
-    mapping = {
-        "projectile_arrow": ((188, 151), (16, 8)),
-        "projectile_stone": ((425, 154), (14, 14)),
-        "projectile_tower": ((702, 152), (18, 18)),
-        "px_spark": ((956, 162), (16, 16)),
-        "px_flame": ((1162, 153), (18, 18)),
-        "px_blood": ((1345, 163), (12, 16)),
-        "px_leaf": ((1519, 151), (16, 16)),
-        "px_star": ((199, 335), (16, 16)),
-        "px_ember": ((425, 354), (12, 12)),
-        "px_rune": ((657, 340), (18, 22)),
-        "px_crater": ((949, 351), (34, 24)),
-        "px_arrow_trail": ((1401, 345), (38, 10)),
-        "px_debris_1": ((175, 557), (14, 14)),
-        "px_debris_2": ((353, 555), (14, 14)),
-        "px_debris_3": ((530, 555), (14, 14)),
-        "px_smoke_dark": ((175, 760), (24, 24)),
-        "px_dust": ((425, 760), (24, 24)),
-        "px_smoke_light": ((701, 760), (28, 28)),
-        "px_mist": ((1100, 760), (28, 22)),
-        "px_shockwave": ((1400, 760), (36, 36)),
-        "px_glow": ((1545, 760), (20, 20)),
-    }
-    for name, (point, size) in mapping.items():
-        save_component_asset(keyed, nearest(comps, *point), fx_dir / f"{name}.png", size)
+    for name, (point, size) in FX_ASSETS.items():
+        out = save_component_asset(keyed, nearest(comps, *point), fx_dir / f"{name}.png", size)
+        audit_frame_edges(audit, f"fx {name}", out)
         enabled.add(name)
-    report.append("fx: ok")
+        audit.fx_assets += 1
 
 
-def process_cursors_and_ui(report: list[str], enabled: set[str]) -> None:
+def process_cursors_and_ui(audit: AuditStats, enabled: set[str]) -> None:
     cursor_path = SOURCE / "cursors_selection_commands.png"
     if cursor_path.exists():
         keyed = keyed_image(Image.open(cursor_path), "magenta")
         comps = components(keyed, min_pixels=80)
         ui_dir = OUT / "ui"
         ui_dir.mkdir(parents=True, exist_ok=True)
-        cursor_map = {
-            "cursor_default": ((204, 185), (32, 32)),
-            "cursor_attack": ((486, 193), (32, 32)),
-            "cursor_build_ok": ((802, 186), (36, 36)),
-            "cursor_build_no": ((1122, 186), (36, 36)),
-            "cursor_gather": ((1435, 192), (36, 36)),
-            "ring_select_s": ((180, 474), (36, 24)),
-            "ring_select_m": ((509, 473), (52, 34)),
-            "ring_select_l": ((932, 471), (72, 44)),
-        }
-        for name, (point, size) in cursor_map.items():
-            save_component_asset(keyed, nearest(comps, *point), ui_dir / f"{name}.png", size)
+        for name, (point, size) in CURSOR_ASSETS.items():
+            out = save_component_asset(keyed, nearest(comps, *point), ui_dir / f"{name}.png", size)
+            audit_frame_edges(audit, f"ui {name}", out)
             enabled.add(name)
+            audit.ui_assets += 1
+    else:
+        note_missing_source(audit, cursor_path)
 
     ui_path = SOURCE / "ui_frames.png"
     if ui_path.exists():
         keyed = keyed_image(Image.open(ui_path), "green")
         comps = components(keyed, min_pixels=80)
         ui_dir = OUT / "ui"
-        frame_map = {
-            "panel_frame": ((498, 742), (512, 168)),
-            "tooltip_frame": ((770, 363), (256, 192)),
-            "minimap_frame": ((247, 385), (192, 192)),
-        }
-        for filename, (point, size) in frame_map.items():
-            save_component_asset(keyed, nearest(comps, *point), ui_dir / f"{filename}.png", size)
-        for key in ["ui_panel_frame", "ui_tooltip_frame", "ui_minimap_frame"]:
+        for filename, (point, size, key) in UI_FRAME_ASSETS.items():
+            out = save_component_asset(keyed, nearest(comps, *point), ui_dir / f"{filename}.png", size)
+            audit_frame_edges(audit, f"ui {filename}", out)
             enabled.add(key)
+            audit.ui_assets += 1
+    else:
+        note_missing_source(audit, ui_path)
 
     icons_path = SOURCE / "command_resource_icons.png"
     if icons_path.exists():
@@ -607,26 +721,25 @@ def process_cursors_and_ui(report: list[str], enabled: set[str]) -> None:
         grid = assign_components_to_grid(comps, keyed.size, 4, 5)
         icon_dir = OUT / "ui/icons"
         icon_dir.mkdir(parents=True, exist_ok=True)
-        names = [
-            "stop", "attack_move", "build", "repair", "rally",
-            "worker", "footman", "archer", "knight", "catapult",
-            "return_cargo", "gather_gold", "gather_lumber", "patrol", "hold_position",
-            "autopilot", "formation", "support", "gold", "lumber",
-        ]
-        for i, name in enumerate(names):
+        for i, name in enumerate(ICON_NAMES):
             r, c = divmod(i, 5)
             crop = crop_keyed(keyed, grid[(r, c)], pad=3)
             bbox = alpha_bbox(crop)
             if bbox:
                 crop = crop.crop(bbox)
-            normalize_crop(crop, (64, 64), min(60 / max(1, crop.width), 60 / max(1, crop.height)), center_y="center").save(icon_dir / f"{name}.png")
+            out = normalize_crop(crop, (64, 64), min(60 / max(1, crop.width), 60 / max(1, crop.height)), center_y="center")
+            out.save(icon_dir / f"{name}.png")
+            audit_frame_edges(audit, f"icon {name}", out)
             enabled.add(f"icon_{name}")
-    report.append("ui/cursors/icons: ok")
+            audit.icon_assets += 1
+    else:
+        note_missing_source(audit, icons_path)
 
 
-def process_damage_overlays(report: list[str], enabled: set[str]) -> None:
+def process_damage_overlays(audit: AuditStats, enabled: set[str]) -> None:
     path = SOURCE / "damage_overlays_all_buildings.png"
     if not path.exists():
+        note_missing_source(audit, path)
         return
     keyed = keyed_image(Image.open(path), "green")
     kinds = ["townhall", "farm", "barracks", "workshop", "tower"]
@@ -642,34 +755,228 @@ def process_damage_overlays(report: list[str], enabled: set[str]) -> None:
                     crop = crop.crop(bbox)
                 target_dir = OUT / "buildings" / race
                 target_dir.mkdir(parents=True, exist_ok=True)
-                normalize_crop(crop, frame, min((frame[0] - 6) / max(1, crop.width), (frame[1] - 6) / max(1, crop.height)), center_y="center").save(target_dir / f"{kind}_{suffix}.png")
+                out = normalize_crop(crop, frame, min((frame[0] - 6) / max(1, crop.width), (frame[1] - 6) / max(1, crop.height)), center_y="center")
+                out.save(target_dir / f"{kind}_{suffix}.png")
+                audit_frame_edges(audit, f"building overlay {race}/{kind} {suffix}", out)
                 enabled.add(f"art_building_{kind}_{race}_{suffix}")
-    report.append("damage overlays: ok")
+                audit.building_overlay_assets += 1
 
 
-def write_manifest(enabled: set[str]) -> None:
+def write_manifest(enabled: set[str]) -> list[str]:
     ordered = sorted(enabled)
     # Legacy alias expected by some tile code.
     if "tile_water_0" in ordered and "tile_water" not in ordered:
         ordered.append("tile_water")
+        ordered = sorted(ordered)
     manifest = {"version": 1, "loadAll": False, "enabledKeys": ordered}
     (OUT / "manifest.generated.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return ordered
+
+
+def draw_stage_background(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int]) -> None:
+    x1, y1, x2, y2 = box
+    draw.rectangle(box, fill=(74, 96, 47, 255))
+    tile = 16
+    for y in range(y1, y2, tile):
+        for x in range(x1, x2, tile):
+            if ((x - x1) // tile + (y - y1) // tile) % 2 == 0:
+                draw.rectangle((x, y, min(x + tile, x2), min(y + tile, y2)), fill=(84, 108, 54, 255))
+
+
+def paste_frame_scaled(
+    canvas: Image.Image,
+    frame: Image.Image,
+    box: tuple[int, int, int, int],
+    display: tuple[int, int],
+    scale: float,
+    bottom_align: bool = True,
+) -> None:
+    x1, y1, x2, y2 = box
+    max_w = max(1, x2 - x1 - 18)
+    max_h = max(1, y2 - y1 - 18)
+    draw_scale = min(scale, max_w / display[0], max_h / display[1])
+    size = (max(1, round(display[0] * draw_scale)), max(1, round(display[1] * draw_scale)))
+    resized = frame.resize(size, Image.Resampling.NEAREST)
+    px = x1 + round((x2 - x1 - size[0]) / 2)
+    if bottom_align:
+        py = y2 - 10 - size[1]
+    else:
+        py = y1 + round((y2 - y1 - size[1]) / 2)
+    canvas.alpha_composite(resized, (px, py))
+
+
+def draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, fill: tuple[int, int, int, int] = (238, 232, 215, 255)) -> None:
+    draw.text(xy, text, fill=fill)
+
+
+def save_unit_scale_audit() -> None:
+    rows: list[tuple[str, Path, tuple[int, int], tuple[int, int]]] = [
+        (f"{race}/{kind}", OUT / "units" / race / f"{kind}_idle.png", (128, 128), UNIT_DISPLAY[kind])
+        for race, kind, _ in UNIT_SOURCES
+    ]
+    rows.append(("neutral/caravan", OUT / "future/caravan_idle.png", (192, 128), (96, 64)))
+
+    label_w = 148
+    cell_w = 142
+    header_h = 34
+    row_h = 132
+    image = Image.new("RGBA", (label_w + cell_w * len(UNIT_DIRECTIONS), header_h + row_h * len(rows)), (30, 35, 28, 255))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, image.width, image.height), fill=(30, 35, 28, 255))
+    for i, direction in enumerate(UNIT_DIRECTIONS):
+        draw_text(draw, (label_w + i * cell_w + 42, 12), direction, (215, 170, 82, 255))
+
+    for r, (label, path, frame, display) in enumerate(rows):
+        y = header_h + r * row_h
+        draw_text(draw, (12, y + 54), label)
+        if not path.exists():
+            draw_text(draw, (label_w + 12, y + 54), f"missing {path.name}", (255, 128, 100, 255))
+            continue
+        sheet = Image.open(path).convert("RGBA")
+        fw, fh = frame
+        for c, direction in enumerate(UNIT_DIRECTIONS):
+            x = label_w + c * cell_w
+            cell = (x + 6, y + 6, x + cell_w - 6, y + row_h - 6)
+            draw_stage_background(draw, cell)
+            draw.ellipse((x + 46, y + row_h - 23, x + 96, y + row_h - 12), fill=(0, 0, 0, 72))
+            crop = sheet.crop((0, c * fh, fw, (c + 1) * fh))
+            paste_frame_scaled(image, crop, cell, display, 2.7, bottom_align=True)
+            draw.rectangle(cell, outline=(75, 84, 63, 255))
+            draw_text(draw, (x + 10, y + 10), direction, (185, 176, 148, 255))
+    image.save(SAMPLE / "unit-scale-audit.png")
+
+
+def save_buildings_audit() -> None:
+    stages = ["stage1", "stage2", "final", "destroying", "ruin"]
+    rows = [(race, kind, OUT / "buildings" / race / f"{kind}.png") for race, kind, _ in BUILDING_SOURCES]
+    label_w = 154
+    cell_w = 138
+    header_h = 34
+    row_h = 126
+    image = Image.new("RGBA", (label_w + cell_w * len(stages), header_h + row_h * len(rows)), (30, 35, 28, 255))
+    draw = ImageDraw.Draw(image)
+    for i, stage in enumerate(stages):
+        draw_text(draw, (label_w + i * cell_w + 34, 12), stage, (215, 170, 82, 255))
+    for r, (race, kind, path) in enumerate(rows):
+        y = header_h + r * row_h
+        draw_text(draw, (12, y + 52), f"{race}/{kind}")
+        if not path.exists():
+            draw_text(draw, (label_w + 12, y + 52), f"missing {path.name}", (255, 128, 100, 255))
+            continue
+        sheet = Image.open(path).convert("RGBA")
+        frame = BUILDING_FRAME[kind]
+        display = BUILDING_DISPLAY[kind]
+        fw, fh = frame
+        for c, stage in enumerate(stages):
+            x = label_w + c * cell_w
+            cell = (x + 6, y + 6, x + cell_w - 6, y + row_h - 6)
+            draw_stage_background(draw, cell)
+            draw.ellipse((x + 39, y + row_h - 25, x + 99, y + row_h - 12), fill=(0, 0, 0, 70))
+            crop = sheet.crop((c * fw, 0, (c + 1) * fw, fh))
+            paste_frame_scaled(image, crop, cell, display, 1.25, bottom_align=False)
+            draw.rectangle(cell, outline=(75, 84, 63, 255))
+            draw_text(draw, (x + 10, y + 10), stage, (185, 176, 148, 255))
+    image.save(SAMPLE / "buildings-audit.png")
+
+
+def save_icon_audit() -> None:
+    cols = 5
+    cell_w = 108
+    cell_h = 112
+    header_h = 24
+    rows = math.ceil(len(ICON_NAMES) / cols)
+    image = Image.new("RGBA", (cols * cell_w, header_h + rows * cell_h), (30, 35, 28, 255))
+    draw = ImageDraw.Draw(image)
+    draw_text(draw, (12, 8), "Runtime command/resource icons", (215, 170, 82, 255))
+    for i, name in enumerate(ICON_NAMES):
+        r, c = divmod(i, cols)
+        x = c * cell_w
+        y = header_h + r * cell_h
+        box = (x + 10, y + 8, x + cell_w - 10, y + 82)
+        draw.rectangle(box, fill=(32, 37, 30, 255), outline=(75, 84, 63, 255))
+        path = OUT / "ui/icons" / f"{name}.png"
+        if path.exists():
+            icon = Image.open(path).convert("RGBA")
+            paste_frame_scaled(image, icon, box, (64, 64), 1.0, bottom_align=False)
+        else:
+            draw_text(draw, (x + 16, y + 38), "missing", (255, 128, 100, 255))
+        draw_text(draw, (x + 10, y + 88), name[:16], (238, 232, 215, 255))
+    image.save(SAMPLE / "icons-audit.png")
+
+
+def save_terrain_audit() -> None:
+    names = TERRAIN_NAMES + ["tile_water", "tile_water_3"]
+    cols = 5
+    cell_w = 108
+    cell_h = 104
+    header_h = 24
+    rows = math.ceil(len(names) / cols)
+    image = Image.new("RGBA", (cols * cell_w, header_h + rows * cell_h), (30, 35, 28, 255))
+    draw = ImageDraw.Draw(image)
+    draw_text(draw, (12, 8), "Runtime terrain tiles", (215, 170, 82, 255))
+    for i, name in enumerate(names):
+        r, c = divmod(i, cols)
+        x = c * cell_w
+        y = header_h + r * cell_h
+        box = (x + 14, y + 8, x + cell_w - 14, y + 76)
+        draw.rectangle(box, fill=(32, 37, 30, 255), outline=(75, 84, 63, 255))
+        path = OUT / "terrain" / f"{name}.png"
+        if path.exists():
+            tile = Image.open(path).convert("RGBA").resize((64, 64), Image.Resampling.NEAREST)
+            image.alpha_composite(tile, (x + 22, y + 10))
+        else:
+            draw_text(draw, (x + 18, y + 34), "missing", (255, 128, 100, 255))
+        draw_text(draw, (x + 10, y + 82), name[:16], (238, 232, 215, 255))
+    image.save(SAMPLE / "terrain-audit.png")
+
+
+def save_audit_images() -> None:
+    save_unit_scale_audit()
+    save_buildings_audit()
+    save_icon_audit()
+    save_terrain_audit()
+
+
+def print_audit_summary(audit: AuditStats, enabled_keys: list[str]) -> None:
+    print("processed:")
+    print(f"  unit sheets: {audit.unit_sheets}")
+    print(f"  unit runtime sheets: {audit.unit_assets}")
+    print(f"  building sheets: {audit.building_sheets}")
+    print(f"  building damage/destruction assets: {audit.building_overlay_assets}")
+    print(f"  terrain assets: {audit.terrain_assets}")
+    print(f"  resource assets: {audit.resource_assets}")
+    print(f"  fx assets: {audit.fx_assets}")
+    print(f"  ui assets: {audit.ui_assets}")
+    print(f"  icon assets: {audit.icon_assets}")
+    if audit.missing_sources:
+        print("missing source files:")
+        for name in sorted(set(audit.missing_sources)):
+            print(f"  {name}")
+    else:
+        print("missing source files: none")
+    if audit.edge_warnings:
+        print(f"edge-touch warnings: {len(audit.edge_warnings)}")
+        for warning in audit.edge_warnings:
+            print(f"  {warning}")
+    else:
+        print("edge-touch warnings: none")
+    print(f"enabledKeys: {len(enabled_keys)}")
 
 
 def main() -> None:
     ensure_dirs()
-    report: list[str] = []
+    audit = AuditStats()
     enabled: set[str] = set()
-    process_units(report, enabled)
-    process_buildings(report, enabled)
-    process_damage_overlays(report, enabled)
-    process_terrain(report, enabled)
-    process_resources(report, enabled)
-    process_fx(report, enabled)
-    process_cursors_and_ui(report, enabled)
-    write_manifest(enabled)
-    print("\n".join(report))
-    print(f"enabled keys: {len(enabled)}")
+    process_units(audit, enabled)
+    process_buildings(audit, enabled)
+    process_damage_overlays(audit, enabled)
+    process_terrain(audit, enabled)
+    process_resources(audit, enabled)
+    process_fx(audit, enabled)
+    process_cursors_and_ui(audit, enabled)
+    enabled_keys = write_manifest(enabled)
+    save_audit_images()
+    print_audit_summary(audit, enabled_keys)
 
 
 if __name__ == "__main__":
