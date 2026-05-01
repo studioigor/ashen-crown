@@ -14,7 +14,7 @@ import { Building } from '../entities/Building';
 import { ResourceNode } from '../entities/ResourceNode';
 import { Caravan } from '../entities/Caravan';
 import { IEntity } from '../entities/Entity';
-import { findPath } from '../systems/Pathfinding';
+import { findPath, getPathfindingStats, resetPathfindingStats } from '../systems/Pathfinding';
 import { Economy } from '../systems/Economy';
 import { runAI, AIState } from '../systems/AI';
 import { runPlayerAutopilot } from '../systems/PlayerAutopilot';
@@ -30,6 +30,24 @@ import {
 } from '../assets/artManifest';
 
 export type GameInit = GameLaunchConfig;
+
+type Point = { x: number; y: number };
+type RepathReason = 'command' | 'group' | 'group-fallback' | 'attack-move' | 'target' | 'resource' | 'return' | 'build' | 'stuck';
+
+interface SharedGroupPath {
+  points: Point[];
+  tailCache: Map<string, Point[] | null>;
+}
+
+const MAX_REPATHS_PER_FRAME = 8;
+const SINGLE_REPATH_COOLDOWN_MS = 420;
+const GROUP_REPATH_COOLDOWN_MS = 900;
+const STUCK_REPATH_MS = 1400;
+const STUCK_PROGRESS_PX = 5;
+const GROUP_LANE_OFFSET_MAX = TILE * 3.5;
+const GROUP_SLOT_ARRIVAL_RADIUS = 12;
+const GROUP_SLOT_SETTLE_RADIUS = 34;
+const GROUP_SLOT_AVOID_FADE_RADIUS = TILE * 3;
 
 export class GameScene extends Phaser.Scene {
   map!: TileMap;
@@ -85,6 +103,13 @@ export class GameScene extends Phaser.Scene {
   private caravanNextSpawnMs = Infinity;
   private caravanRouteFlip = false;
   private debugCaravans = false;
+  private debugPathfinding = false;
+  private debugPathfindingUnits: Unit[] = [];
+  private debugPathfindingText: Phaser.GameObjects.Text | null = null;
+  private debugPathfindingNextLogMs = 0;
+  private debugPathfindingStartMs = 0;
+  private nextGroupMoveId = 1;
+  private repathsThisFrame = 0;
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -115,6 +140,13 @@ export class GameScene extends Phaser.Scene {
     this.caravanNextSpawnMs = Infinity;
     this.caravanRouteFlip = false;
     this.debugCaravans = false;
+    this.debugPathfinding = false;
+    this.debugPathfindingUnits = [];
+    this.debugPathfindingText = null;
+    this.debugPathfindingNextLogMs = 0;
+    this.debugPathfindingStartMs = 0;
+    this.nextGroupMoveId = 1;
+    this.repathsThisFrame = 0;
     this.aiState = {
       phase: 'economy',
       nextCheckMs: 0,
@@ -146,7 +178,8 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.effects = new EffectsSystem(this);
     this.audio = new AudioSystem(this);
-    this.layout = generateMap(this.seed);
+    this.debugPathfinding = this.isDebugPathfindingEnabled();
+    this.layout = this.debugPathfinding ? this.createDebugPathfindingLayout() : generateMap(this.seed);
     this.map = this.layout.map;
 
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -154,11 +187,12 @@ export class GameScene extends Phaser.Scene {
     this.effects.setupPostFX();
     this.effects.setupVignette();
 
-    this.economy.register(SIDE.player, this.playerRace, 430, 230, 0);
-    this.economy.register(SIDE.ai, this.aiRace, 430, 230, 0);
+    this.economy.register(SIDE.player, this.playerRace, 430, 230, this.debugPathfinding ? 100 : 0);
+    this.economy.register(SIDE.ai, this.aiRace, 430, 230, this.debugPathfinding ? 100 : 0);
 
     this.drawTiles();
-    this.spawnInitial();
+    if (this.debugPathfinding) this.spawnDebugPathfindingScenario();
+    else this.spawnInitial();
     this.debugCaravans = this.isDebugCaravansEnabled();
     this.scheduleNextCaravan(true);
 
@@ -177,10 +211,12 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(2000);
+    if (this.debugPathfinding) this.createDebugPathfindingOverlay();
 
     this.setupInput();
 
     this.scene.launch('UIScene', { playerSide: SIDE.player, launchConfig: this.launchConfig });
+    if (this.debugPathfinding) this.startDebugPathfindingCommand();
 
     // Ambient audio starts once user has interacted (audioctx resumes on first sound)
     this.input.once('pointerdown', () => this.audio.startAmbient());
@@ -299,7 +335,100 @@ export class GameScene extends Phaser.Scene {
     return new URLSearchParams(window.location.search).get('debugCaravans') === '1';
   }
 
+  private isDebugPathfindingEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('debugPathfinding') === '1';
+  }
+
+  private createDebugPathfindingLayout(): MapLayout {
+    const map = new TileMap();
+    for (let y = 0; y < map.h; y++) {
+      for (let x = 0; x < map.w; x++) {
+        map.set(x, y, (x + y) % 2 === 0 ? TileType.Grass : TileType.Grass2);
+      }
+    }
+
+    const gateMinY = 30;
+    const gateMaxY = 32;
+    for (let y = 6; y < map.h - 6; y++) {
+      if (y >= gateMinY && y <= gateMaxY) continue;
+      map.set(31, y, TileType.Stone);
+      map.set(32, y, TileType.Stone);
+    }
+
+    for (let x = 8; x <= 56; x++) {
+      for (let y = gateMinY; y <= gateMaxY; y++) {
+        map.set(x, y, TileType.Dirt);
+        map.setWalkable(x, y, true);
+      }
+    }
+    for (let y = 21; y <= 42; y++) {
+      for (let x = 6; x <= 21; x++) {
+        map.set(x, y, TileType.Dirt);
+        map.setWalkable(x, y, true);
+      }
+      for (let x = 43; x <= 58; x++) {
+        map.set(x, y, TileType.Dirt);
+        map.setWalkable(x, y, true);
+      }
+    }
+
+    return {
+      map,
+      playerBase: { tx: 12, ty: 32 },
+      aiBase: { tx: 53, ty: 32 },
+      goldMines: [],
+      trees: [],
+      decals: []
+    };
+  }
+
+  private spawnDebugPathfindingScenario(): void {
+    resetPathfindingStats();
+    this.debugPathfindingUnits = [];
+    const startX = 10 * TILE + TILE / 2;
+    const startY = 31 * TILE + TILE / 2;
+    const cols = 10;
+    const rows = 6;
+    const spacingX = 24;
+    const spacingY = 24;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const x = startX + (col - (cols - 1) / 2) * spacingX;
+        const y = startY + (row - (rows - 1) / 2) * spacingY;
+        this.debugPathfindingUnits.push(this.spawnUnit(x, y, 'footman', SIDE.player, this.playerRace));
+      }
+    }
+    this.selected = this.debugPathfindingUnits.slice();
+    this.cameras.main.centerOn(startX + TILE * 8, startY);
+  }
+
+  private createDebugPathfindingOverlay(): void {
+    this.debugPathfindingText = this.add.text(12, 86, '', {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: '#d9ffe0',
+      backgroundColor: 'rgba(0, 0, 0, 0.68)'
+    }).setScrollFactor(0).setDepth(2001).setPadding(8);
+  }
+
+  private startDebugPathfindingCommand(): void {
+    this.time.delayedCall(250, () => {
+      const units = this.debugPathfindingUnits.filter(u => u.alive);
+      if (units.length === 0) return;
+      this.selected = units;
+      this.updateSelectionRings();
+      resetPathfindingStats();
+      this.debugPathfindingStartMs = this.time.now;
+      this.debugPathfindingNextLogMs = this.time.now;
+      const target = { x: 54 * TILE + TILE / 2, y: 31 * TILE + TILE / 2 };
+      this.orderMoveGroup(units, target.x, target.y);
+      this.effects.commandMarker(target.x, target.y, 0x66ff66, 'move', 'Debug');
+    });
+  }
+
   private caravanSpawnsEnabled(): boolean {
+    if (this.debugPathfinding) return false;
     if (this.mode === 'skirmish') return CARAVAN_CONFIG.enabledInSkirmish;
     return CARAVAN_CONFIG.enabledInStory;
   }
@@ -795,11 +924,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const slots = this.resolveFormationSlots(group, formationSlots(group, { x, y }, 32), { x, y });
+    const groupMoveId = this.nextGroupMoveId++;
     const sharedPath = this.findSharedGroupPath(group, x, y);
     group.forEach((u, i) => {
       u.clearOrders();
       u.state = 'move';
-      this.applyGroupPath(u, slots[i], sharedPath);
+      this.applyGroupPath(u, slots[i], sharedPath, groupMoveId);
     });
   }
 
@@ -815,11 +945,12 @@ export class GameScene extends Phaser.Scene {
       u.clearOrders();
       u.state = 'attack_move';
       u.attackMoveTo = { x, y };
-      this.repath(u, x, y);
+      this.repath(u, x, y, 'attack-move', { force: true });
       return;
     }
 
     const slots = this.resolveFormationSlots(group, formationSlots(group, { x, y }, 34), { x, y });
+    const groupMoveId = this.nextGroupMoveId++;
     const sharedPath = this.findSharedGroupPath(group, x, y);
     group.forEach((u, i) => {
       u.clearOrders();
@@ -829,14 +960,14 @@ export class GameScene extends Phaser.Scene {
         u.state = 'attack_move';
         u.attackMoveTo = slots[i];
       }
-      this.applyGroupPath(u, slots[i], sharedPath);
+      this.applyGroupPath(u, slots[i], sharedPath, groupMoveId);
     });
   }
 
   orderMove(u: Unit, x: number, y: number): void {
     u.clearOrders();
     u.state = 'move';
-    this.repath(u, x, y);
+    this.repath(u, x, y, 'command', { force: true });
   }
 
   orderAttack(u: Unit, target: IEntity): void {
@@ -861,19 +992,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   orderReturnCargo(u: Unit, hall: Building): void {
+    u.groupMoveId = 0;
+    u.groupSlot = null;
+    u.pathWaitMs = 0;
     u.returnTo = hall;
     u.state = 'return_cargo';
-    this.repath(u, hall.x, hall.y);
+    this.repath(u, hall.x, hall.y, 'return', { force: true });
   }
 
   orderBuild(u: Unit, site: Building): void {
     u.clearOrders();
     u.state = 'build';
     u.targetBuilding = site;
-    this.repath(u, site.x, site.y);
+    this.repath(u, site.x, site.y, 'build', { force: true });
   }
 
-  repath(u: Unit, wx: number, wy: number): void {
+  repath(u: Unit, wx: number, wy: number, reason: RepathReason = 'command', options: { force?: boolean; cooldownMs?: number } = {}): boolean {
+    const now = this.time.now;
+    if (!options.force) {
+      if (this.repathsThisFrame >= MAX_REPATHS_PER_FRAME) return false;
+      if (now < u.nextRepathAtMs) return false;
+    }
+    this.repathsThisFrame++;
     const s = this.tileFromWorld(u.x, u.y);
     const g = this.tileFromWorld(wx, wy);
     const path = findPath(this.map, s.tx, s.ty, g.tx, g.ty);
@@ -881,28 +1021,128 @@ export class GameScene extends Phaser.Scene {
     u.setPath(wp);
     u.pathDest = wp.length > 0 ? wp[wp.length - 1] : { x: wx, y: wy };
     u.pathRepathMs = 0;
+    u.lastRepathReason = reason;
+    const baseCooldown = options.cooldownMs ?? (u.groupMoveId ? GROUP_REPATH_COOLDOWN_MS : SINGLE_REPATH_COOLDOWN_MS);
+    u.nextRepathAtMs = now + baseCooldown + this.repathJitter(u);
+    return wp.length > 0;
   }
 
-  private findSharedGroupPath(units: Unit[], x: number, y: number): { x: number; y: number }[] | null {
+  private findSharedGroupPath(units: Unit[], x: number, y: number): SharedGroupPath | null {
     const center = this.groupCentroid(units);
     const s = this.tileFromWorld(center.x, center.y);
     const g = this.tileFromWorld(x, y);
     if (!this.map.isWalkable(s.tx, s.ty)) return null;
     const path = findPath(this.map, s.tx, s.ty, g.tx, g.ty);
     if (path.length === 0) return null;
-    return path.map(p => ({ x: p.tx * TILE + TILE / 2, y: p.ty * TILE + TILE / 2 }));
+    return {
+      points: path.map(p => ({ x: p.tx * TILE + TILE / 2, y: p.ty * TILE + TILE / 2 })),
+      tailCache: new Map()
+    };
   }
 
-  private applyGroupPath(u: Unit, destination: { x: number; y: number }, sharedPath: { x: number; y: number }[] | null): void {
-    if (!sharedPath || sharedPath.length === 0) {
-      this.repath(u, destination.x, destination.y);
+  private applyGroupPath(u: Unit, destination: Point, sharedPath: SharedGroupPath | null, groupMoveId: number): void {
+    u.groupMoveId = groupMoveId;
+    u.groupSlot = destination;
+
+    if (!sharedPath || sharedPath.points.length === 0) {
+      this.repath(u, destination.x, destination.y, 'group-fallback', { force: true, cooldownMs: GROUP_REPATH_COOLDOWN_MS });
       return;
     }
 
-    const path = sharedPath.map(p => ({ x: p.x, y: p.y }));
-    path[path.length - 1] = { x: destination.x, y: destination.y };
+    let path = this.applyGroupLaneOffset(sharedPath.points, destination);
+    path = this.trimGroupPathForUnit(u, path);
+    const tail = this.findGroupSlotTail(sharedPath, path[path.length - 1], destination);
+    if (tail) {
+      path.pop();
+      path.push(...tail);
+    } else {
+      path[path.length - 1] = { x: destination.x, y: destination.y };
+    }
     u.setPath(path);
     u.pathRepathMs = 0;
+    u.lastRepathReason = 'group';
+    u.nextRepathAtMs = this.time.now + GROUP_REPATH_COOLDOWN_MS + this.repathJitter(u);
+  }
+
+  private trimGroupPathForUnit(u: Unit, path: Point[]): Point[] {
+    if (path.length <= 1) return path;
+    const maxLookahead = Math.min(path.length - 1, 10);
+    let bestIdx = 0;
+    let bestScore = Infinity;
+    for (let i = 0; i <= maxLookahead; i++) {
+      const p = path[i];
+      if (!this.hasClearWalkableLine({ x: u.x, y: u.y }, p)) continue;
+      const d = Phaser.Math.Distance.Between(u.x, u.y, p.x, p.y);
+      const score = d - i * TILE * 0.35;
+      if (score < bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx === 0) return path;
+    return path.slice(bestIdx);
+  }
+
+  private applyGroupLaneOffset(points: Point[], destination: Point): Point[] {
+    if (points.length < 2) return points.map(p => ({ x: p.x, y: p.y }));
+    const first = points[0];
+    const last = points[points.length - 1];
+    const dx = last.x - first.x;
+    const dy = last.y - first.y;
+    const len = Math.hypot(dx, dy);
+    if (len <= 0.01) return points.map(p => ({ x: p.x, y: p.y }));
+
+    const px = -dy / len;
+    const py = dx / len;
+    const desiredOffset = (destination.x - last.x) * px + (destination.y - last.y) * py;
+    const laneOffset = Phaser.Math.Clamp(desiredOffset, -GROUP_LANE_OFFSET_MAX, GROUP_LANE_OFFSET_MAX);
+    if (Math.abs(laneOffset) < 2) return points.map(p => ({ x: p.x, y: p.y }));
+
+    const out: Point[] = [];
+    let prev: Point | null = null;
+    for (const point of points) {
+      const candidate = { x: point.x + px * laneOffset, y: point.y + py * laneOffset };
+      const tile = this.tileFromWorld(candidate.x, candidate.y);
+      const ok: boolean = this.map.isWalkable(tile.tx, tile.ty) && (!prev || this.hasClearWalkableLine(prev, candidate));
+      const nextPoint: Point = ok ? candidate : { x: point.x, y: point.y };
+      out.push(nextPoint);
+      prev = nextPoint;
+    }
+    return out;
+  }
+
+  private findGroupSlotTail(sharedPath: SharedGroupPath, from: Point, destination: Point): Point[] | null {
+    if (this.hasClearWalkableLine(from, destination)) return null;
+    const s = this.tileFromWorld(from.x, from.y);
+    const g = this.tileFromWorld(destination.x, destination.y);
+    const key = `${s.tx}:${s.ty}>${g.tx}:${g.ty}`;
+    if (sharedPath.tailCache.has(key)) return sharedPath.tailCache.get(key) ?? null;
+    const tail = findPath(this.map, s.tx, s.ty, g.tx, g.ty);
+    if (tail.length === 0) {
+      sharedPath.tailCache.set(key, null);
+      return null;
+    }
+    const points = tail.map(p => ({ x: p.tx * TILE + TILE / 2, y: p.ty * TILE + TILE / 2 }));
+    points[points.length - 1] = { x: destination.x, y: destination.y };
+    sharedPath.tailCache.set(key, points);
+    return points;
+  }
+
+  private hasClearWalkableLine(a: Point, b: Point): boolean {
+    const dist = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
+    const steps = Math.max(1, Math.ceil(dist / (TILE / 2)));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = Phaser.Math.Linear(a.x, b.x, t);
+      const y = Phaser.Math.Linear(a.y, b.y, t);
+      const tile = this.tileFromWorld(x, y);
+      if (!this.map.isWalkable(tile.tx, tile.ty)) return false;
+    }
+    return true;
+  }
+
+  private repathJitter(u: Unit): number {
+    return (u.id % 17) * 13;
   }
 
   private resolveFormationSlots(
@@ -1096,11 +1336,11 @@ export class GameScene extends Phaser.Scene {
 
   update(_t: number, dt: number): void {
     if (this.gameOver) return;
+    this.repathsThisFrame = 0;
     this.updateCamera(dt);
     this.effects.ambientViewportTick(dt, this.cameras.main.worldView);
     runPlayerAutopilot(this);
     this.updateUnits(dt);
-    this.applySeparation(dt);
     this.updateCaravans(dt);
     this.updateBuildings(dt);
     this.updateProjectiles(dt);
@@ -1111,12 +1351,35 @@ export class GameScene extends Phaser.Scene {
     this.lastFogTickMs += dt;
     if (this.lastFogTickMs >= FOG.updateMs) { this.updateFog(); this.lastFogTickMs = 0; }
     this.lastAITickMs += dt;
-    if (this.lastAITickMs >= DIFFICULTY[this.difficulty].aiDelayMs) {
+    if (!this.debugPathfinding && this.lastAITickMs >= DIFFICULTY[this.difficulty].aiDelayMs) {
       runAI(this, this.aiState, this.difficulty);
       this.lastAITickMs = 0;
     }
-    this.checkVictory();
+    if (this.debugPathfinding) this.updateDebugPathfinding();
+    else this.checkVictory();
     this.pruneDead();
+  }
+
+  private updateDebugPathfinding(): void {
+    if (!this.debugPathfindingText) return;
+    const stats = getPathfindingStats();
+    const elapsed = Math.max(0, (this.time.now - this.debugPathfindingStartMs) / 1000);
+    const units = this.debugPathfindingUnits.filter(u => u.alive);
+    const moving = units.filter(u => u.state === 'move' || u.state === 'attack_move').length;
+    const stuck = units.filter(u => u.path.length > 0 && u.pathStuckMs >= STUCK_REPATH_MS).length;
+    const arrived = units.length - moving;
+    const maxStuckMs = units.reduce((best, u) => Math.max(best, u.pathStuckMs), 0);
+    const lines = [
+      'debugPathfinding=1',
+      `t=${elapsed.toFixed(1)}s units=${units.length} moving=${moving} arrived=${arrived} stuck=${stuck}`,
+      `findPath calls=${stats.calls} avg=${stats.avgMs.toFixed(2)}ms max=${stats.maxMs.toFixed(2)}ms`,
+      `iter avg=${stats.avgIterations.toFixed(0)} max=${stats.maxIterations} limit=${stats.limitHits} empty=${stats.emptyResults}`,
+      `frame repaths=${this.repathsThisFrame}/${MAX_REPATHS_PER_FRAME} maxStuck=${Math.round(maxStuckMs)}ms`
+    ];
+    this.debugPathfindingText.setText(lines.join('\n'));
+    if (this.time.now < this.debugPathfindingNextLogMs) return;
+    this.debugPathfindingNextLogMs = this.time.now + 2000;
+    console.log(`[path-debug] ${lines.slice(1).join(' | ')}`);
   }
 
   private updateSelectionRingsFollow(): void {
@@ -1190,29 +1453,43 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tickMove(u: Unit, dt: number): void {
-    if (!this.stepPath(u, dt)) u.state = 'idle';
+    if (!this.stepPath(u, dt)) {
+      this.finishMovement(u);
+      u.state = 'idle';
+    }
   }
 
   private tickAttackMove(u: Unit, dt: number): void {
     const tgt = this.acquireTarget(u, u.sight * TILE);
     if (tgt) { this.assignAttackTarget(u, tgt); return; }
     if (!this.stepPath(u, dt)) {
+      this.finishMovement(u);
       u.state = 'idle';
       u.attackMoveTo = null;
     }
+  }
+
+  private finishMovement(u: Unit): void {
+    u.groupMoveId = 0;
+    u.groupSlot = null;
+    u.pathWaitMs = 0;
+    u.pathStuckMs = 0;
+    u.nextRepathAtMs = 0;
+    u.moveIntentX = 0;
+    u.moveIntentY = 0;
   }
 
   private tickAttack(u: Unit, dt: number): void {
     let tgt: IEntity | null = u.targetUnit && u.targetUnit.alive ? u.targetUnit : null;
     if (!tgt) tgt = u.targetBuilding && u.targetBuilding.alive ? u.targetBuilding : null;
     if (!tgt) {
-      if (u.attackMoveTo) { u.state = 'attack_move'; this.repath(u, u.attackMoveTo.x, u.attackMoveTo.y); return; }
+      if (u.attackMoveTo) { u.state = 'attack_move'; this.repath(u, u.attackMoveTo.x, u.attackMoveTo.y, 'attack-move'); return; }
       u.state = 'idle'; u.targetUnit = null; u.targetBuilding = null; return;
     }
     const dist = Phaser.Math.Distance.Between(u.x, u.y, tgt.x, tgt.y);
     const effectiveRange = u.range + tgt.radius + u.radius + (tgt.kind === 'building' ? TILE * 0.65 : 0);
     if (dist > effectiveRange) {
-      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, tgt.x, tgt.y);
+      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, tgt.x, tgt.y, 'target');
       this.stepPath(u, dt);
       return;
     }
@@ -1245,7 +1522,7 @@ export class GameScene extends Phaser.Scene {
     const dist = Phaser.Math.Distance.Between(u.x, u.y, node.x, node.y);
     const reach = node.radius + u.radius + TILE * 1.5;
     if (dist > reach) {
-      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, node.x, node.y);
+      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, node.x, node.y, 'resource');
       this.stepPath(u, dt);
       return;
     }
@@ -1281,7 +1558,7 @@ export class GameScene extends Phaser.Scene {
     if (!hall) { u.state = 'idle'; return; }
     const dist = Phaser.Math.Distance.Between(u.x, u.y, hall.x, hall.y);
     if (dist > hall.radius + u.radius + TILE * 1.5) {
-      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, hall.x, hall.y);
+      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, hall.x, hall.y, 'return');
       this.stepPath(u, dt);
       return;
     }
@@ -1307,7 +1584,7 @@ export class GameScene extends Phaser.Scene {
     if (site.completed) { u.state = 'idle'; u.targetBuilding = null; return; }
     const dist = Phaser.Math.Distance.Between(u.x, u.y, site.x, site.y);
     if (dist > site.radius + u.radius + TILE * 1.5) {
-      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, site.x, site.y);
+      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, site.x, site.y, 'build');
       this.stepPath(u, dt);
       return;
     }
@@ -1328,48 +1605,141 @@ export class GameScene extends Phaser.Scene {
   }
 
   private stepPath(u: Unit, dt: number): boolean {
-    if (u.path.length === 0) return false;
+    if (u.path.length === 0) {
+      u.moveIntentX = 0;
+      u.moveIntentY = 0;
+      return false;
+    }
+    if (this.isSettledAtGroupSlot(u, GROUP_SLOT_ARRIVAL_RADIUS)) {
+      u.path = [];
+      u.moveIntentX = 0;
+      u.moveIntentY = 0;
+      return false;
+    }
     const step = (u.speed * dt) / 1000;
     const next = u.path[0];
     const dx = next.x - u.x;
     const dy = next.y - u.y;
     const d = Math.hypot(dx, dy);
     if (d <= step) {
+      u.moveIntentX = d > 0.01 ? dx / d : 0;
+      u.moveIntentY = d > 0.01 ? dy / d : 0;
       u.x = next.x; u.y = next.y;
       u.path.shift();
-    } else {
-      u.x += (dx / d) * step;
-      u.y += (dy / d) * step;
+      if (u.path.length === 0) {
+        u.moveIntentX = 0;
+        u.moveIntentY = 0;
+      }
+      this.trackPathProgress(u, dt);
+      return true;
     }
+
+    const desiredX = dx / d;
+    const desiredY = dy / d;
+    const trafficSpeed = this.trafficSpeedFactor(u, next, desiredX, desiredY);
+    u.pathWaitMs = trafficSpeed < 0.99 ? u.pathWaitMs + dt : 0;
+    const steer = this.steeringDirection(u, next, desiredX, desiredY);
+    u.moveIntentX = steer.x;
+    u.moveIntentY = steer.y;
+    const adjustedStep = step * trafficSpeed;
+    if (!this.tryMoveUnit(u, steer.x * adjustedStep, steer.y * adjustedStep)) {
+      this.tryMoveUnit(u, desiredX * adjustedStep, desiredY * adjustedStep);
+    }
+    this.trackPathProgress(u, dt);
     return true;
   }
 
-  private applySeparation(dt: number): void {
-    const strength = Math.min(1, dt / 16.67) * 1.4;
-    for (let i = 0; i < this.units.length; i++) {
-      const a = this.units[i];
-      if (!a.alive) continue;
-      for (let j = i + 1; j < this.units.length; j++) {
-        const b = this.units[j];
-        if (!b.alive || b.side !== a.side) continue;
-        const min = a.radius + b.radius + 4;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d = Math.hypot(dx, dy);
-        if (d <= 0.01 || d >= min) continue;
-        const push = ((min - d) / 2) * strength;
-        const nx = dx / d, ny = dy / d;
-        this.tryNudge(a, -nx * push, -ny * push);
-        this.tryNudge(b, nx * push, ny * push);
-      }
-    }
+  private isSettledAtGroupSlot(u: Unit, radius: number): boolean {
+    return !!u.groupSlot && Phaser.Math.Distance.Between(u.x, u.y, u.groupSlot.x, u.groupSlot.y) <= radius;
   }
 
-  private tryNudge(u: Unit, dx: number, dy: number): void {
+  private trafficSpeedFactor(u: Unit, next: Point, desiredX: number, desiredY: number): number {
+    if (this.isSettledAtGroupSlot(u, GROUP_SLOT_SETTLE_RADIUS)) return 1;
+    const distToNext = Phaser.Math.Distance.Between(u.x, u.y, next.x, next.y);
+    let slow = 1;
+    for (const other of this.units) {
+      if (!other.alive || other === u || other.side !== u.side) continue;
+      const ox = other.x - u.x;
+      const oy = other.y - u.y;
+      const ahead = ox * desiredX + oy * desiredY;
+      if (ahead <= 0) continue;
+      const lateral = Math.abs(ox * desiredY - oy * desiredX);
+      const min = u.radius + other.radius + 8;
+      if (ahead > min * 1.8 || lateral > min * 0.8) continue;
+      const otherToNext = Phaser.Math.Distance.Between(other.x, other.y, next.x, next.y);
+      if (otherToNext < distToNext || other.id < u.id) slow = Math.min(slow, 0.35);
+    }
+    if (u.pathWaitMs > 650) slow = Math.max(slow, 0.62);
+    return slow;
+  }
+
+  private steeringDirection(u: Unit, next: Point, desiredX: number, desiredY: number): Point {
+    if (this.isSettledAtGroupSlot(u, GROUP_SLOT_SETTLE_RADIUS)) return { x: desiredX, y: desiredY };
+    const avoidanceScale = this.groupSlotAvoidanceScale(u);
+    let avoidX = 0;
+    let avoidY = 0;
+    if (avoidanceScale > 0) {
+      for (const other of this.units) {
+        if (!other.alive || other === u || other.side !== u.side) continue;
+        const dx = u.x - other.x;
+        const dy = u.y - other.y;
+        const d = Math.hypot(dx, dy);
+        const range = u.radius + other.radius + 14;
+        if (d <= 0.01 || d >= range) continue;
+        const weight = (range - d) / range;
+        avoidX += (dx / d) * weight;
+        avoidY += (dy / d) * weight;
+      }
+    }
+    const x = desiredX + avoidX * 0.85 * avoidanceScale;
+    const y = desiredY + avoidY * 0.85 * avoidanceScale;
+    const len = Math.hypot(x, y);
+    if (len <= 0.01) return { x: desiredX, y: desiredY };
+    return { x: x / len, y: y / len };
+  }
+
+  private groupSlotAvoidanceScale(u: Unit): number {
+    if (!u.groupSlot) return 1;
+    const d = Phaser.Math.Distance.Between(u.x, u.y, u.groupSlot.x, u.groupSlot.y);
+    return Phaser.Math.Clamp((d - GROUP_SLOT_SETTLE_RADIUS) / Math.max(1, GROUP_SLOT_AVOID_FADE_RADIUS - GROUP_SLOT_SETTLE_RADIUS), 0, 1);
+  }
+
+  private tryMoveUnit(u: Unit, dx: number, dy: number): boolean {
     const nx = Phaser.Math.Clamp(u.x + dx, 0, WORLD_W - 1);
     const ny = Phaser.Math.Clamp(u.y + dy, 0, WORLD_H - 1);
     const t = this.map.worldToTile(nx, ny);
-    if (!this.map.isWalkable(t.tx, t.ty)) return;
-    u.x = nx; u.y = ny;
+    if (!this.map.isWalkable(t.tx, t.ty)) return false;
+    u.x = nx;
+    u.y = ny;
+    return true;
+  }
+
+  private trackPathProgress(u: Unit, dt: number): void {
+    if (u.path.length === 0) {
+      u.pathStuckMs = 0;
+      u.pathProgressX = u.x;
+      u.pathProgressY = u.y;
+      return;
+    }
+
+    const moved = Phaser.Math.Distance.Between(u.x, u.y, u.pathProgressX, u.pathProgressY);
+    if (moved >= STUCK_PROGRESS_PX) {
+      u.pathStuckMs = 0;
+      u.pathProgressX = u.x;
+      u.pathProgressY = u.y;
+      return;
+    }
+
+    u.pathStuckMs += dt;
+    if (u.pathStuckMs < STUCK_REPATH_MS || !u.pathDest) return;
+    const dest = u.groupSlot ?? u.pathDest;
+    if (this.repath(u, dest.x, dest.y, 'stuck')) {
+      u.pathStuckMs = 0;
+      u.pathProgressX = u.x;
+      u.pathProgressY = u.y;
+    } else if (this.time.now < u.nextRepathAtMs) {
+      u.pathStuckMs = Math.min(u.pathStuckMs, STUCK_REPATH_MS);
+    }
   }
 
   private updateCaravans(dt: number): void {
@@ -1429,9 +1799,12 @@ export class GameScene extends Phaser.Scene {
   private returnToNearestHall(u: Unit): void {
     const h = this.findNearestHall(u);
     if (!h) { u.state = 'idle'; return; }
+    u.groupMoveId = 0;
+    u.groupSlot = null;
+    u.pathWaitMs = 0;
     u.returnTo = h;
     u.state = 'return_cargo';
-    this.repath(u, h.x, h.y);
+    this.repath(u, h.x, h.y, 'return', { force: true });
   }
 
   private updateBuildings(dt: number): void {

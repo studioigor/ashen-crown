@@ -23,6 +23,14 @@ export class MenuScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
+    if (this.isDebugPathfindingEnabled()) {
+      this.start({
+        mode: 'skirmish',
+        playerRace: 'alliance',
+        difficulty: 'normal'
+      });
+      return;
+    }
 
     this.menuEl = document.getElementById('menu-layer');
     this.videoEl = document.getElementById('menu-video') as HTMLVideoElement | null;
@@ -86,6 +94,11 @@ export class MenuScene extends Phaser.Scene {
 
   private start(config: GameLaunchConfig): void {
     this.scene.start('GameScene', config);
+  }
+
+  private isDebugPathfindingEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('debugPathfinding') === '1';
   }
 
   private applyArtBackground(): void {

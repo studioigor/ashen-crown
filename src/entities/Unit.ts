@@ -81,6 +81,16 @@ export class Unit implements IEntity {
   path: { x: number; y: number }[] = [];
   pathRepathMs = 0;
   pathDest: { x: number; y: number } | null = null;
+  groupMoveId = 0;
+  groupSlot: { x: number; y: number } | null = null;
+  nextRepathAtMs = 0;
+  lastRepathReason: string | null = null;
+  pathStuckMs = 0;
+  pathProgressX = 0;
+  pathProgressY = 0;
+  pathWaitMs = 0;
+  moveIntentX = 0;
+  moveIntentY = 0;
   attackMoveTo: { x: number; y: number } | null = null;
   targetUnit: IEntity | null = null;
   targetResource: ResourceNode | null = null;
@@ -232,6 +242,16 @@ export class Unit implements IEntity {
   clearOrders(): void {
     this.path = [];
     this.pathDest = null;
+    this.groupMoveId = 0;
+    this.groupSlot = null;
+    this.nextRepathAtMs = 0;
+    this.lastRepathReason = null;
+    this.pathStuckMs = 0;
+    this.pathProgressX = this.x;
+    this.pathProgressY = this.y;
+    this.pathWaitMs = 0;
+    this.moveIntentX = 0;
+    this.moveIntentY = 0;
     this.attackMoveTo = null;
     this.targetUnit = null;
     this.targetResource = null;
@@ -243,6 +263,12 @@ export class Unit implements IEntity {
   setPath(points: { x: number; y: number }[]): void {
     this.path = points;
     this.pathDest = points.length ? points[points.length - 1] : null;
+    this.pathStuckMs = 0;
+    this.pathProgressX = this.x;
+    this.pathProgressY = this.y;
+    this.pathWaitMs = 0;
+    this.moveIntentX = 0;
+    this.moveIntentY = 0;
   }
 
   canAttack(): boolean { return this.unitKind !== 'worker' || this.atk > 0; }
@@ -390,11 +416,15 @@ export class Unit implements IEntity {
 
     const dx = this.sprite.x - this.lastX;
     const dy = this.sprite.y - this.lastY;
-    const moving = Math.abs(dx) + Math.abs(dy) > 0.15;
+    const pathMotion = this.path.length > 0 || this.state === 'move' || this.state === 'attack_move';
+    const intentMoving = Math.abs(this.moveIntentX) + Math.abs(this.moveIntentY) > 0.01;
+    const moving = pathMotion && intentMoving && Math.abs(dx) + Math.abs(dy) > 0.25;
+    const faceDx = intentMoving ? this.moveIntentX : dx;
+    const faceDy = intentMoving ? this.moveIntentY : dy;
 
     if (this.usingArtSheet) {
       if (moving) {
-        this.facing = getUnitFacingFromVector(dx, dy, this.facing);
+        this.facing = getUnitFacingFromVector(faceDx, faceDy, this.facing);
         if (!this.attackBusy && !this.workBusy) this.playArtAnimation('walk');
         const now = this.sprite.scene.time.now;
         if (now - this.lastStepDust > VISUALS.stepDustMs) {
@@ -414,8 +444,8 @@ export class Unit implements IEntity {
       return;
     }
 
-    if (Math.abs(dx) > 0.4) {
-      const shouldFlip = dx < 0;
+    if (moving && Math.abs(faceDx) > 0.15) {
+      const shouldFlip = faceDx < 0;
       if (shouldFlip !== this.facingFlip) {
         this.facingFlip = shouldFlip;
         this.sprite.setFlipX(shouldFlip);
