@@ -46,7 +46,8 @@ Unit sheets лежат в `public/assets/art/source` и называются:
 Unit source sheet ожидается как 3 ряда направлений: `south`, `east`, `north`.
 `west` генерируется зеркалированием `east`. Runtime sheet получает 4 ряда
 направлений и отдельный PNG на каждую анимацию. Frame size для обычных юнитов
-`128x128`, для caravan `192x128`.
+`192x192`, для caravan `288x192`; gameplay display size задается отдельно в
+`src/assets/artManifest.ts`.
 
 Building sheets называются:
 
@@ -62,7 +63,9 @@ Building sheets называются:
 - `building_horde_tower.png`
 
 Building source sheet ожидается как 5 кадров в строку:
-`stage1`, `stage2`, `final`, `destroying`, `ruin`.
+`stage1`, `stage2`, `final`, `destroying`, `ruin`. Runtime frame size:
+`384x384` для townhall/barracks/workshop, `256x256` для farm/tower; gameplay
+display size не меняется.
 
 Shared sheets:
 
@@ -89,7 +92,7 @@ tiles нормализуются как полноразмерные `32x32`; и
 - какие не-terrain кадры касаются края alpha bbox;
 - итоговое количество `enabledKeys`.
 
-Текущий полный набор должен давать `enabledKeys: 146` и `missing source files:
+Текущий полный набор должен давать `enabledKeys: 160` и `missing source files:
 none`.
 
 Sample viewer должен показывать все enabled runtime assets:
@@ -98,6 +101,7 @@ Sample viewer должен показывать все enabled runtime assets:
 - building stages;
 - building damage/destruction overlays;
 - terrain tiles, включая alias `tile_water`;
+- resources и decals из `resources_and_decals.png`;
 - resources, fx, ui и command/resource icons.
 
 Проверяйте визуально:

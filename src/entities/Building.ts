@@ -27,6 +27,7 @@ export class Building implements IEntity {
   readonly buildingKind: BuildingKind;
   readonly race: Race;
   readonly sprite: Phaser.GameObjects.Sprite;
+  readonly shadow: Phaser.GameObjects.Ellipse;
   readonly damageOverlay: Phaser.GameObjects.Image;
   readonly sizeTiles: number;
   hp: number;
@@ -85,6 +86,7 @@ export class Building implements IEntity {
     this.sprite.setDepth(20);
     this.sprite.setData('entity', this);
     this.radius = (this.sizeTiles * TILE) / 2;
+    this.shadow = this.createContactShadow(scene, cx, cy);
 
     const damageKey = this.damageTextureKey(scene, false) ?? `building_${kind}_${race}_damaged`;
     this.damageOverlay = scene.add.image(cx, cy, damageKey);
@@ -142,6 +144,20 @@ export class Building implements IEntity {
     if (!buildingArtReady(scene, this.buildingKind, this.race)) return;
     const display = BUILDING_ART_DISPLAY[this.buildingKind];
     this.damageOverlay.setDisplaySize(display.width, display.height);
+  }
+
+  private createContactShadow(scene: Phaser.Scene, cx: number, cy: number): Phaser.GameObjects.Ellipse {
+    const display = buildingArtReady(scene, this.buildingKind, this.race)
+      ? BUILDING_ART_DISPLAY[this.buildingKind]
+      : { width: this.sizeTiles * TILE, height: this.sizeTiles * TILE };
+    return scene.add.ellipse(
+      cx,
+      cy + display.height * 0.32,
+      display.width * 0.78,
+      display.height * 0.2,
+      0x000000,
+      0.3
+    );
   }
 
   private damageTextureKey(scene: Phaser.Scene, heavy: boolean): string | null {
@@ -238,6 +254,7 @@ export class Building implements IEntity {
   get visualRadius(): number { return Math.max(this.sprite.displayWidth, this.sprite.displayHeight) / 2; }
 
   setVisible(v: boolean): void {
+    this.shadow.setVisible(v);
     this.sprite.setVisible(v);
     this.damageOverlay.setVisible(v);
     this.flag.setVisible(v);
@@ -337,6 +354,7 @@ export class Building implements IEntity {
     this.alive = false;
     const scene = this.sprite.scene;
     scene.tweens.killTweensOf(this.sprite);
+    scene.tweens.killTweensOf(this.shadow);
     scene.tweens.killTweensOf(this.damageOverlay);
     if (buildingArtReady(scene, this.buildingKind, this.race)) {
       this.damageOverlay.setAlpha(0);
@@ -355,6 +373,14 @@ export class Building implements IEntity {
             this.sprite.destroy();
             this.damageOverlay.destroy();
           }
+        });
+        scene.tweens.add({
+          targets: this.shadow,
+          alpha: 0,
+          duration: 900,
+          delay: 2600,
+          ease: 'Cubic.easeIn',
+          onComplete: () => this.shadow.destroy()
         });
       });
       this.flag.destroy();
@@ -375,6 +401,13 @@ export class Building implements IEntity {
         this.sprite.destroy();
         this.damageOverlay.destroy();
       }
+    });
+    scene.tweens.add({
+      targets: this.shadow,
+      alpha: 0,
+      duration: 520,
+      ease: 'Cubic.easeIn',
+      onComplete: () => this.shadow.destroy()
     });
     scene.tweens.add({
       targets: this.damageOverlay,
@@ -429,6 +462,7 @@ export class Building implements IEntity {
 
   private updateDepths(): void {
     const base = 20 + this.sprite.y / 10000;
+    this.shadow.setDepth(base - 2);
     this.productionGlow.setDepth(base - 1);
     this.sprite.setDepth(base);
     this.damageOverlay.setDepth(base + 1);

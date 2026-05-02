@@ -20,6 +20,12 @@ DEBUG = ROOT / "task/art-sample/normalized"
 UNIT_DIRECTIONS = ["south", "east", "north", "west"]
 SOURCE_DIRECTIONS = ["south", "east", "north"]
 
+UNIT_FRAME_SCALE = 1.5
+UNIT_FRAME = (192, 192)
+CARAVAN_FRAME = (288, 192)
+TERRAIN_TILE_SIZE = 64
+ICON_SIZE = 128
+
 UNIT_DISPLAY = {
     "worker": (40, 40),
     "footman": (44, 44),
@@ -29,28 +35,28 @@ UNIT_DISPLAY = {
 }
 
 UNIT_TARGET_BASE_HEIGHT = {
-    "worker": 104,
-    "footman": 106,
-    "archer": 104,
-    "knight": 116,
-    "catapult": 104,
-    "caravan": 112,
+    "worker": round(104 * UNIT_FRAME_SCALE),
+    "footman": round(106 * UNIT_FRAME_SCALE),
+    "archer": round(104 * UNIT_FRAME_SCALE),
+    "knight": round(116 * UNIT_FRAME_SCALE),
+    "catapult": round(104 * UNIT_FRAME_SCALE),
+    "caravan": round(112 * UNIT_FRAME_SCALE),
 }
 
 BUILDING_FRAME = {
-    "townhall": (192, 192),
-    "farm": (128, 128),
-    "barracks": (192, 192),
-    "workshop": (192, 192),
-    "tower": (128, 128),
+    "townhall": (384, 384),
+    "farm": (256, 256),
+    "barracks": (384, 384),
+    "workshop": (384, 384),
+    "tower": (256, 256),
 }
 
 BUILDING_DISPLAY = {
-    "townhall": (96, 96),
-    "farm": (64, 64),
-    "barracks": (96, 96),
-    "workshop": (96, 96),
-    "tower": (64, 64),
+    "townhall": (144, 144),
+    "farm": (96, 96),
+    "barracks": (144, 144),
+    "workshop": (144, 144),
+    "tower": (128, 128),
 }
 
 UNIT_SOURCES = [
@@ -82,38 +88,55 @@ BUILDING_SOURCES = [
 TERRAIN_NAMES = ["tile_grass", "tile_grass2", "tile_dirt", "tile_forest", "tile_stone", "tile_water_0", "tile_water_1", "tile_water_2"]
 
 RESOURCE_ASSETS = {
-    "goldmine": ((261, 205), (96, 96), "center"),
-    "goldmine_damaged": ((702, 215), (96, 96), "center"),
-    "goldmine_depleted": ((1102, 220), (96, 96), "center"),
-    "tree": ((1493, 221), (32, 32), "bottom"),
-    "tree_stump": ((194, 503), (32, 32), "bottom"),
-    "tree_log": ((562, 510), (40, 24), "center"),
-    "tree_trunk": ((827, 503), (20, 30), "center"),
-    "tree_canopy": ((1125, 503), (36, 36), "center"),
+    "goldmine": ((261, 205), (192, 192), "center"),
+    "goldmine_damaged": ((702, 215), (192, 192), "center"),
+    "goldmine_depleted": ((1102, 220), (192, 192), "center"),
+    "tree": ((1493, 221), (96, 96), "bottom"),
+    "tree_stump": ((194, 503), (96, 96), "bottom"),
+    "tree_log": ((562, 510), (80, 48), "center"),
+    "tree_trunk": ((827, 503), (40, 60), "center"),
+    "tree_canopy": ((1125, 503), (72, 72), "center"),
+}
+
+DECAL_ASSETS = {
+    "decal_flower_0": ((124, 681), (40, 48), "bottom"),
+    "decal_flower_1": ((290, 681), (40, 48), "bottom"),
+    "decal_flower_2": ((451, 682), (40, 48), "bottom"),
+    "decal_flower_3": ((607, 680), (40, 48), "bottom"),
+    "decal_flower_4": ((761, 682), (40, 48), "bottom"),
+    "decal_pebble_0": ((951, 691), (32, 24), "center"),
+    "decal_pebble_1": ((1078, 689), (32, 24), "center"),
+    "decal_twig": ((1269, 689), (64, 36), "center"),
+    "decal_mushroom_0": ((1443, 683), (40, 48), "bottom"),
+    "decal_mushroom_1": ((1576, 688), (40, 48), "bottom"),
+    "decal_tuft_0": ((178, 838), (48, 40), "bottom"),
+    "decal_tuft_1": ((409, 831), (64, 48), "bottom"),
+    "decal_dirt_patch": ((1028, 845), (96, 48), "center"),
+    "decal_rock_pile": ((1369, 841), (96, 52), "center"),
 }
 
 FX_ASSETS = {
-    "projectile_arrow": ((188, 151), (16, 8)),
-    "projectile_stone": ((425, 154), (14, 14)),
-    "projectile_tower": ((702, 152), (18, 18)),
-    "px_spark": ((956, 162), (16, 16)),
-    "px_flame": ((1162, 153), (18, 18)),
-    "px_blood": ((1345, 163), (12, 16)),
-    "px_leaf": ((1519, 151), (16, 16)),
-    "px_star": ((199, 335), (16, 16)),
-    "px_ember": ((425, 354), (12, 12)),
-    "px_rune": ((657, 340), (18, 22)),
-    "px_crater": ((949, 351), (34, 24)),
-    "px_arrow_trail": ((1401, 345), (38, 10)),
-    "px_debris_1": ((175, 557), (14, 14)),
-    "px_debris_2": ((353, 555), (14, 14)),
-    "px_debris_3": ((530, 555), (14, 14)),
-    "px_smoke_dark": ((175, 760), (24, 24)),
-    "px_dust": ((425, 760), (24, 24)),
-    "px_smoke_light": ((701, 760), (28, 28)),
-    "px_mist": ((1100, 760), (28, 22)),
-    "px_shockwave": ((1400, 760), (36, 36)),
-    "px_glow": ((1545, 760), (20, 20)),
+    "projectile_arrow": ((188, 151), (32, 16)),
+    "projectile_stone": ((425, 154), (28, 28)),
+    "projectile_tower": ((702, 152), (36, 36)),
+    "px_spark": ((956, 162), (32, 32)),
+    "px_flame": ((1162, 153), (36, 36)),
+    "px_blood": ((1345, 163), (24, 32)),
+    "px_leaf": ((1519, 151), (32, 32)),
+    "px_star": ((199, 335), (32, 32)),
+    "px_ember": ((425, 354), (24, 24)),
+    "px_rune": ((657, 340), (36, 44)),
+    "px_crater": ((949, 351), (68, 48)),
+    "px_arrow_trail": ((1401, 345), (76, 20)),
+    "px_debris_1": ((175, 557), (28, 28)),
+    "px_debris_2": ((353, 555), (28, 28)),
+    "px_debris_3": ((530, 555), (28, 28)),
+    "px_smoke_dark": ((175, 760), (48, 48)),
+    "px_dust": ((425, 760), (48, 48)),
+    "px_smoke_light": ((701, 760), (56, 56)),
+    "px_mist": ((1100, 760), (56, 44)),
+    "px_shockwave": ((1400, 760), (72, 72)),
+    "px_glow": ((1545, 760), (40, 40)),
 }
 
 CURSOR_ASSETS = {
@@ -219,6 +242,7 @@ class AuditStats:
     building_overlay_assets: int = 0
     terrain_assets: int = 0
     resource_assets: int = 0
+    decal_assets: int = 0
     fx_assets: int = 0
     ui_assets: int = 0
     icon_assets: int = 0
@@ -528,7 +552,7 @@ def process_units(audit: AuditStats, enabled: set[str]) -> None:
             note_missing_source(audit, path)
             continue
         audit.unit_sheets += 1
-        frame = (128, 128)
+        frame = UNIT_FRAME
         poses = unit_pose_map(path, kind, frame)
         target_dir = OUT / "units" / race
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -554,7 +578,7 @@ def process_units(audit: AuditStats, enabled: set[str]) -> None:
     caravan_path = SOURCE / "future_caravan.png"
     if caravan_path.exists():
         audit.unit_sheets += 1
-        frame = (192, 128)
+        frame = CARAVAN_FRAME
         poses = unit_pose_map(caravan_path, "caravan", frame)
         target_dir = OUT / "future"
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -622,7 +646,8 @@ def save_component_asset(keyed: Image.Image, comp: Component, path: Path, size: 
         out.save(path)
         return out
     trimmed = crop.crop(bbox)
-    scale = min((size[0] - 2) / trimmed.width, (size[1] - 2) / trimmed.height)
+    vertical_margin = 8 if center_y == "bottom" else 2
+    scale = min((size[0] - 2) / trimmed.width, (size[1] - vertical_margin) / trimmed.height)
     out = normalize_crop(trimmed, size, scale, center_y=center_y)
     out.save(path)
     return out
@@ -642,6 +667,11 @@ def process_resources(audit: AuditStats, enabled: set[str]) -> None:
         audit_frame_edges(audit, f"resource {name}", out)
         enabled.add(name)
         audit.resource_assets += 1
+    for name, (point, size, center_y) in DECAL_ASSETS.items():
+        out = save_component_asset(keyed, nearest(comps, *point), resource_dir / f"{name}.png", size, center_y=center_y)
+        audit_frame_edges(audit, f"decal {name}", out)
+        enabled.add(name)
+        audit.decal_assets += 1
 
 
 def process_terrain(audit: AuditStats, enabled: set[str]) -> None:
@@ -653,7 +683,7 @@ def process_terrain(audit: AuditStats, enabled: set[str]) -> None:
         for i, name in enumerate(TERRAIN_NAMES):
             r, c = divmod(i, 4)
             crop = im.crop((round(c * im.width / 4), round(r * im.height / 2), round((c + 1) * im.width / 4), round((r + 1) * im.height / 2)))
-            crop.resize((32, 32), Image.Resampling.LANCZOS).save(target_dir / f"{name}.png")
+            crop.resize((TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE), Image.Resampling.LANCZOS).save(target_dir / f"{name}.png")
             enabled.add(name)
             audit.terrain_assets += 1
         shutil.copyfile(target_dir / "tile_water_0.png", target_dir / "tile_water.png")
@@ -663,7 +693,7 @@ def process_terrain(audit: AuditStats, enabled: set[str]) -> None:
         note_missing_source(audit, terrain)
     water = SOURCE / "water_frame_3.png"
     if water.exists():
-        Image.open(water).convert("RGBA").resize((32, 32), Image.Resampling.LANCZOS).save(OUT / "terrain/tile_water_3.png")
+        Image.open(water).convert("RGBA").resize((TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE), Image.Resampling.LANCZOS).save(OUT / "terrain/tile_water_3.png")
         enabled.add("tile_water_3")
         audit.terrain_assets += 1
     else:
@@ -727,7 +757,13 @@ def process_cursors_and_ui(audit: AuditStats, enabled: set[str]) -> None:
             bbox = alpha_bbox(crop)
             if bbox:
                 crop = crop.crop(bbox)
-            out = normalize_crop(crop, (64, 64), min(60 / max(1, crop.width), 60 / max(1, crop.height)), center_y="center")
+            icon_margin = 4
+            out = normalize_crop(
+                crop,
+                (ICON_SIZE, ICON_SIZE),
+                min((ICON_SIZE - icon_margin * 2) / max(1, crop.width), (ICON_SIZE - icon_margin * 2) / max(1, crop.height)),
+                center_y="center",
+            )
             out.save(icon_dir / f"{name}.png")
             audit_frame_edges(audit, f"icon {name}", out)
             enabled.add(f"icon_{name}")
@@ -811,10 +847,10 @@ def draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, fill: t
 
 def save_unit_scale_audit() -> None:
     rows: list[tuple[str, Path, tuple[int, int], tuple[int, int]]] = [
-        (f"{race}/{kind}", OUT / "units" / race / f"{kind}_idle.png", (128, 128), UNIT_DISPLAY[kind])
+        (f"{race}/{kind}", OUT / "units" / race / f"{kind}_idle.png", UNIT_FRAME, UNIT_DISPLAY[kind])
         for race, kind, _ in UNIT_SOURCES
     ]
-    rows.append(("neutral/caravan", OUT / "future/caravan_idle.png", (192, 128), (96, 64)))
+    rows.append(("neutral/caravan", OUT / "future/caravan_idle.png", CARAVAN_FRAME, (96, 64)))
 
     label_w = 148
     cell_w = 142
@@ -945,6 +981,7 @@ def print_audit_summary(audit: AuditStats, enabled_keys: list[str]) -> None:
     print(f"  building damage/destruction assets: {audit.building_overlay_assets}")
     print(f"  terrain assets: {audit.terrain_assets}")
     print(f"  resource assets: {audit.resource_assets}")
+    print(f"  decal assets: {audit.decal_assets}")
     print(f"  fx assets: {audit.fx_assets}")
     print(f"  ui assets: {audit.ui_assets}")
     print(f"  icon assets: {audit.icon_assets}")

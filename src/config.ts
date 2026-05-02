@@ -69,7 +69,7 @@ export const STORY_MODE_DEFAULTS = {
 
 export const DIFFICULTY = {
   easy: {
-    label: 'Easy',
+    label: 'Легко',
     aiDelayMs: 1200,
     attackScore: 7,
     targetWorkers: 7,
@@ -85,7 +85,7 @@ export const DIFFICULTY = {
     caravanOpportunityRadiusTiles: 5
   },
   normal: {
-    label: 'Normal',
+    label: 'Обычно',
     aiDelayMs: 750,
     attackScore: 9,
     targetWorkers: 10,
@@ -101,7 +101,7 @@ export const DIFFICULTY = {
     caravanOpportunityRadiusTiles: 6
   },
   hard: {
-    label: 'Hard',
+    label: 'Сложно',
     aiDelayMs: 520,
     attackScore: 11,
     targetWorkers: 13,
@@ -142,8 +142,8 @@ export const RACE_COLOR: Record<Race, number> = {
 };
 
 export const RACE_LABEL: Record<Race, string> = {
-  alliance: 'Alliance',
-  horde: 'Horde'
+  alliance: 'Альянс',
+  horde: 'Орда'
 };
 
 export const CAMERA_SPEED = 760;
@@ -180,31 +180,31 @@ export const UNIT = {
     hp: 42, speed: 94, size: 14, atk: 4, range: 24, cooldown: 1150, sight: 6,
     cost: { gold: 50, lumber: 0 }, food: 1, build: 10500, score: 1,
     producer: 'townhall', requires: undefined, splashRadius: 0, bonusVsBuilding: 0, hotkey: 'E',
-    labelByRace: { alliance: 'Peasant', horde: 'Peon' }
+    labelByRace: { alliance: 'Крестьянин', horde: 'Батрак' }
   },
   footman: {
     hp: 86, speed: 76, size: 16, atk: 11, range: 28, cooldown: 950, sight: 7,
     cost: { gold: 80, lumber: 0 }, food: 1, build: 14500, score: 2,
     producer: 'barracks', requires: undefined, splashRadius: 0, bonusVsBuilding: 0, hotkey: 'F',
-    labelByRace: { alliance: 'Footman', horde: 'Grunt' }
+    labelByRace: { alliance: 'Пехотинец', horde: 'Рубака' }
   },
   archer: {
     hp: 52, speed: 82, size: 14, atk: 8, range: 168, cooldown: 1350, sight: 8,
     cost: { gold: 70, lumber: 40 }, food: 1, build: 15500, score: 2,
     producer: 'barracks', requires: undefined, splashRadius: 0, bonusVsBuilding: 0, hotkey: 'A',
-    labelByRace: { alliance: 'Ranger', horde: 'Headhunter' }
+    labelByRace: { alliance: 'Лучник', horde: 'Охотник' }
   },
   knight: {
     hp: 132, speed: 112, size: 20, atk: 18, range: 30, cooldown: 950, sight: 8,
     cost: { gold: 145, lumber: 35 }, food: 2, build: 21000, score: 4,
     producer: 'barracks', requires: 'workshop', splashRadius: 0, bonusVsBuilding: 0, hotkey: 'K',
-    labelByRace: { alliance: 'Knight', horde: 'Raider' }
+    labelByRace: { alliance: 'Рыцарь', horde: 'Налётчик' }
   },
   catapult: {
     hp: 115, speed: 54, size: 24, atk: 28, range: 230, cooldown: 2450, sight: 9,
     cost: { gold: 170, lumber: 110 }, food: 3, build: 26500, score: 6,
     producer: 'workshop', requires: undefined, splashRadius: 52, bonusVsBuilding: 22, hotkey: 'C',
-    labelByRace: { alliance: 'Ballista', horde: 'Catapult' }
+    labelByRace: { alliance: 'Баллиста', horde: 'Катапульта' }
   }
 } as const satisfies Record<string, {
   hp: number;
@@ -230,27 +230,27 @@ export const BUILDING = {
   townhall: {
     hp: 950, size: 3, sight: 8, cost: { gold: 400, lumber: 200 }, food: 6, build: 24000,
     accepts: ['gold', 'lumber'], attack: 0, range: 0, cooldown: 0, hotkey: 'H',
-    labelByRace: { alliance: 'Town Hall', horde: 'Great Hall' }
+    labelByRace: { alliance: 'Ратуша', horde: 'Великий зал' }
   },
   farm: {
     hp: 420, size: 2, sight: 4, cost: { gold: 80, lumber: 40 }, food: 5, build: 11500,
     accepts: [], attack: 0, range: 0, cooldown: 0, hotkey: 'F',
-    labelByRace: { alliance: 'Farm', horde: 'Burrow' }
+    labelByRace: { alliance: 'Ферма', horde: 'Нора' }
   },
   barracks: {
     hp: 650, size: 3, sight: 6, cost: { gold: 155, lumber: 85 }, food: 0, build: 18000,
     accepts: [], attack: 0, range: 0, cooldown: 0, hotkey: 'B',
-    labelByRace: { alliance: 'Barracks', horde: 'Barracks' }
+    labelByRace: { alliance: 'Казармы', horde: 'Казармы' }
   },
   workshop: {
     hp: 620, size: 3, sight: 6, cost: { gold: 170, lumber: 120 }, food: 0, build: 21000,
     accepts: [], attack: 0, range: 0, cooldown: 0, hotkey: 'W',
-    labelByRace: { alliance: 'Workshop', horde: 'Siege Lodge' }
+    labelByRace: { alliance: 'Мастерская', horde: 'Осадный двор' }
   },
   tower: {
     hp: 470, size: 2, sight: 9, cost: { gold: 120, lumber: 100 }, food: 0, build: 16500,
     accepts: [], attack: 12, range: 190, cooldown: 1200, hotkey: 'T',
-    labelByRace: { alliance: 'Guard Tower', horde: 'Watch Tower' }
+    labelByRace: { alliance: 'Сторожевая башня', horde: 'Дозорная башня' }
   }
 } as const satisfies Record<string, {
   hp: number;

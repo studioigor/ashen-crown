@@ -98,8 +98,9 @@ export const UNIT_ART_DISPLAY: Record<UnitKind, DisplaySize> = {
   catapult: { width: 48, height: 48 }
 };
 
+export const UNIT_ART_FRAME: DisplaySize = { width: 192, height: 192 };
 export const CARAVAN_ART_DISPLAY: DisplaySize = { width: 96, height: 64 };
-export const CARAVAN_ART_FRAME: DisplaySize = { width: 192, height: 128 };
+export const CARAVAN_ART_FRAME: DisplaySize = { width: 288, height: 192 };
 
 export const BUILDING_ART_DISPLAY: Record<BuildingKind, DisplaySize> = {
   townhall: { width: 144, height: 144 },
@@ -110,11 +111,11 @@ export const BUILDING_ART_DISPLAY: Record<BuildingKind, DisplaySize> = {
 };
 
 export const BUILDING_ART_FRAME: Record<BuildingKind, DisplaySize> = {
-  townhall: { width: 192, height: 192 },
-  farm: { width: 128, height: 128 },
-  barracks: { width: 192, height: 192 },
-  workshop: { width: 192, height: 192 },
-  tower: { width: 128, height: 128 }
+  townhall: { width: 384, height: 384 },
+  farm: { width: 256, height: 256 },
+  barracks: { width: 384, height: 384 },
+  workshop: { width: 384, height: 384 },
+  tower: { width: 256, height: 256 }
 };
 
 export function unitSheetKey(kind: UnitKind, race: Race, anim: UnitAnimState): string {
@@ -161,8 +162,8 @@ export const UNIT_SHEET_ASSETS: UnitSheetAsset[] = RACES.flatMap((race) =>
           group: 'unit' as const,
           key: unitSheetKey(unitKind, race, anim),
           path: `assets/art/units/${race}/${unitKind}_${anim}.png`,
-          frameWidth: 128,
-          frameHeight: 128,
+          frameWidth: UNIT_ART_FRAME.width,
+          frameHeight: UNIT_ART_FRAME.height,
           race,
           unitKind,
           anim,
@@ -247,6 +248,20 @@ export const STATIC_ART_ASSETS: ArtImageAsset[] = [
   { type: 'image', key: 'goldmine_depleted', path: 'assets/art/resources/goldmine_depleted.png' },
   { type: 'image', key: 'tree_stump', path: 'assets/art/resources/tree_stump.png' },
   { type: 'image', key: 'tree_log', path: 'assets/art/resources/tree_log.png' },
+  { type: 'image', key: 'decal_flower_0', path: 'assets/art/resources/decal_flower_0.png' },
+  { type: 'image', key: 'decal_flower_1', path: 'assets/art/resources/decal_flower_1.png' },
+  { type: 'image', key: 'decal_flower_2', path: 'assets/art/resources/decal_flower_2.png' },
+  { type: 'image', key: 'decal_flower_3', path: 'assets/art/resources/decal_flower_3.png' },
+  { type: 'image', key: 'decal_flower_4', path: 'assets/art/resources/decal_flower_4.png' },
+  { type: 'image', key: 'decal_pebble_0', path: 'assets/art/resources/decal_pebble_0.png' },
+  { type: 'image', key: 'decal_pebble_1', path: 'assets/art/resources/decal_pebble_1.png' },
+  { type: 'image', key: 'decal_tuft_0', path: 'assets/art/resources/decal_tuft_0.png' },
+  { type: 'image', key: 'decal_tuft_1', path: 'assets/art/resources/decal_tuft_1.png' },
+  { type: 'image', key: 'decal_mushroom_0', path: 'assets/art/resources/decal_mushroom_0.png' },
+  { type: 'image', key: 'decal_mushroom_1', path: 'assets/art/resources/decal_mushroom_1.png' },
+  { type: 'image', key: 'decal_twig', path: 'assets/art/resources/decal_twig.png' },
+  { type: 'image', key: 'decal_dirt_patch', path: 'assets/art/resources/decal_dirt_patch.png' },
+  { type: 'image', key: 'decal_rock_pile', path: 'assets/art/resources/decal_rock_pile.png' },
   { type: 'image', key: 'projectile_arrow', path: 'assets/art/fx/projectile_arrow.png' },
   { type: 'image', key: 'projectile_stone', path: 'assets/art/fx/projectile_stone.png' },
   { type: 'image', key: 'projectile_tower', path: 'assets/art/fx/projectile_tower.png' },

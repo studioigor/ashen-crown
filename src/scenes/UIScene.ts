@@ -287,7 +287,7 @@ export class UIScene extends Phaser.Scene {
 
     if (selBuilding) {
       const statsParts = [`HP ${Math.round(selBuilding.hp)}/${selBuilding.maxHp}`];
-      if (selBuilding.canAttack()) statsParts.push(`ATK ${selBuilding.attack}`, `RNG ${Math.round(selBuilding.range)}`);
+      if (selBuilding.canAttack()) statsParts.push(`атака ${selBuilding.attack}`, `дальность ${Math.round(selBuilding.range)}`);
       this.elStats.innerText = statsParts.join(' • ');
 
       if (!selBuilding.completed) {
@@ -323,7 +323,7 @@ export class UIScene extends Phaser.Scene {
     this.elTitle.innerText = labelForBuilding(b.buildingKind, b.race);
     
     const statsParts = [`HP ${Math.round(b.hp)}/${b.maxHp}`];
-    if (b.canAttack()) statsParts.push(`ATK ${b.attack}`, `RNG ${Math.round(b.range)}`);
+    if (b.canAttack()) statsParts.push(`атака ${b.attack}`, `дальность ${Math.round(b.range)}`);
     this.elStats.innerText = statsParts.join(' • ');
 
     if (!b.completed) {
@@ -351,8 +351,8 @@ export class UIScene extends Phaser.Scene {
     for (const kind of trainableFor(b.buildingKind)) {
       const def = UNIT[kind];
       const label = `Нанять ${labelForUnit(kind, b.race)}`;
-      const tooltip = `${def.food} лимит, ${Math.round(def.build/1000)}с\nЦена: ${def.cost.gold}G, ${def.cost.lumber}L`;
-      this.addButton(label, tooltip, () => this.game.events.emit('ui-train', kind), `<span class="cost">${def.cost.gold}G  ${def.cost.lumber}L</span>`, kind);
+      const tooltip = `${def.food} лимит, ${Math.round(def.build/1000)}с\nЦена: ${def.cost.gold} зол., ${def.cost.lumber} дер.`;
+      this.addButton(label, tooltip, () => this.game.events.emit('ui-train', kind), `<span class="cost">${def.cost.gold} зол.  ${def.cost.lumber} дер.</span>`, kind);
     }
   }
 
@@ -375,7 +375,7 @@ export class UIScene extends Phaser.Scene {
         this.game.events.emit('ui-build', kind);
         this.buildMenuOpen = false;
         this.renderCommandPanel();
-      }, `<span class="cost">${def.cost.gold}G ${def.cost.lumber}L ${foodAdd}</span>`, 'build');
+      }, `<span class="cost">${def.cost.gold} зол. ${def.cost.lumber} дер. ${foodAdd}</span>`, 'build');
     });
   }
 
@@ -617,7 +617,7 @@ function renderSkirmishSummary(summary: SkirmishSummary): string {
     ['Время', formatDuration(summary.durationMs)],
     ['Убито', `${summary.unitsKilled}`],
     ['Потери', `${summary.unitsLost}`],
-    ['Ресурсы', `${summary.resourcesGathered.gold}G / ${summary.resourcesGathered.lumber}L`],
+    ['Ресурсы', `${summary.resourcesGathered.gold} зол. / ${summary.resourcesGathered.lumber} дер.`],
     ['Караваны', `${summary.caravansLooted}`]
   ];
   return rows
@@ -781,6 +781,6 @@ function escapeHtml(value: string): string {
 }
 
 function modeStatusLabel(config: GameLaunchConfig): string {
-  if (config.mode === 'story') return `Story Map · ${STORY_MAP_LABEL[config.storyMapId]}`;
-  return `1v1 Skirmish · ${DIFFICULTY[config.difficulty].label}`;
+  if (config.mode === 'story') return `Сюжетная карта · ${STORY_MAP_LABEL[config.storyMapId]}`;
+  return `Стычка 1×1 · ${DIFFICULTY[config.difficulty].label}`;
 }

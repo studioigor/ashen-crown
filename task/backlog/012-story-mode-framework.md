@@ -15,6 +15,7 @@ Story mode должен быть отдельным от skirmish:
 - свои caravan events;
 - свои win/loss/fail states;
 - возможность временно ограничивать production/building.
+- погодные условия и эффекты
 
 ## Предыдущие задачи
 

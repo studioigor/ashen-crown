@@ -5,7 +5,8 @@ import { Side, SIDE, RESOURCE, TILE } from '../config';
 export type ResourceType = 'gold' | 'lumber';
 
 const TREE_DISPLAY_SIZE = TILE * 1.5;
-const TREE_LOG_SCALE = 1.22;
+const GOLDMINE_DISPLAY_SIZE = 96;
+const TREE_LOG_DISPLAY = { width: 49, height: 29 };
 
 export class ResourceNode implements IEntity {
   readonly id = newEntityId();
@@ -33,12 +34,15 @@ export class ResourceNode implements IEntity {
     if (type === 'gold') {
       this.tileW = 3; this.tileH = 3;
       this.sprite = scene.add.sprite(tx * TILE + TILE * 1.5, ty * TILE + TILE * 1.5, 'goldmine');
+      this.applyResourceDisplaySize();
       this.amount = RESOURCE.mineAmount;
       this.radius = TILE * 1.4;
+      const baseScaleX = this.sprite.scaleX;
+      const baseScaleY = this.sprite.scaleY;
       scene.tweens.add({
         targets: this.sprite,
-        scaleX: { from: 1, to: 1.018 },
-        scaleY: { from: 1, to: 1.012 },
+        scaleX: { from: baseScaleX, to: baseScaleX * 1.018 },
+        scaleY: { from: baseScaleY, to: baseScaleY * 1.012 },
         duration: 1800,
         yoyo: true,
         repeat: -1,
@@ -92,7 +96,16 @@ export class ResourceNode implements IEntity {
     const key = frac < 0.32 ? 'goldmine_depleted' : frac < 0.62 ? 'goldmine_damaged' : 'goldmine';
     if (this.sprite.scene.textures.exists(key) && this.sprite.texture.key !== key) {
       this.sprite.setTexture(key);
+      this.applyResourceDisplaySize();
     }
+  }
+
+  private applyResourceDisplaySize(): void {
+    if (this.resourceType === 'gold') {
+      this.sprite.setDisplaySize(GOLDMINE_DISPLAY_SIZE, GOLDMINE_DISPLAY_SIZE);
+      return;
+    }
+    this.sprite.setDisplaySize(TREE_DISPLAY_SIZE, TREE_DISPLAY_SIZE);
   }
 
   private fadeOut(scene: Phaser.Scene, targets: Phaser.GameObjects.GameObject | Phaser.GameObjects.GameObject[], delay: number, duration: number): void {
@@ -111,7 +124,7 @@ export class ResourceNode implements IEntity {
   private addTreeLogDecal(scene: Phaser.Scene): Phaser.GameObjects.Image | null {
     if (!scene.textures.exists('tree_log')) return null;
     const decal = scene.add.image(this.sprite.x + TILE * 0.22, this.sprite.y + TILE * 0.3, 'tree_log')
-      .setScale(TREE_LOG_SCALE);
+      .setDisplaySize(TREE_LOG_DISPLAY.width, TREE_LOG_DISPLAY.height);
     decal.setDepth(this.sprite.depth + 0.01);
     decal.setRotation(-0.12);
     decal.setData('entity', null);
@@ -126,6 +139,7 @@ export class ResourceNode implements IEntity {
     scene.tweens.killTweensOf(this.sprite);
     if (this.resourceType === 'gold' && scene.textures.exists('goldmine_depleted')) {
       this.sprite.setTexture('goldmine_depleted');
+      this.applyResourceDisplaySize();
       this.sprite.setData('entity', null);
       this.sprite.setAlpha(1);
       this.fadeOut(scene, this.sprite, 6500, 900);
@@ -134,7 +148,7 @@ export class ResourceNode implements IEntity {
     if (this.resourceType === 'lumber' && scene.textures.exists('tree_stump')) {
       this.sprite.setTexture('tree_stump');
       this.sprite.setOrigin(0.5, 0.8);
-      this.sprite.setDisplaySize(TREE_DISPLAY_SIZE, TREE_DISPLAY_SIZE);
+      this.applyResourceDisplaySize();
       this.sprite.setRotation(0);
       this.sprite.setAlpha(1);
       this.sprite.setData('entity', null);

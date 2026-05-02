@@ -136,8 +136,7 @@ function assignIdleWorkers(scene: GameScene, workers: Unit[]): void {
     const type: 'gold' | 'lumber' = goldWorkers < lumberWorkers + 2 ? 'gold' : 'lumber';
     const node = scene.findNearestResource(w, type) ?? scene.findNearestResource(w, type === 'gold' ? 'lumber' : 'gold');
     if (node) {
-      w.targetResource = node;
-      w.state = 'gather';
+      scene.orderGather(w, node);
       if (node.resourceType === 'gold') goldWorkers++;
       else lumberWorkers++;
     }

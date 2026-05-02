@@ -62,6 +62,7 @@ export function generateMap(seed = 42): MapLayout {
   ]);
   goldMines.push({ tx: center.tx + 2, ty: center.ty + 3 });
   for (const m of goldMines) clearArea(map, m.tx, m.ty, 5);
+  addStartingForests(rng, map, playerBase, aiBase, goldMines);
 
   if (!hasWalkablePath(map, playerBase, aiBase)) {
     carveLane(map, playerBase, center, 5);
@@ -69,6 +70,7 @@ export function generateMap(seed = 42): MapLayout {
   }
 
   const trees = materializeTrees(map, playerBase, aiBase, goldMines);
+  addNorthernBaseTrees(rng, map, playerBase, aiBase, goldMines, trees);
   const decals = scatterDecals(rng, map, profile.decalDensity);
   return { map, playerBase, aiBase, goldMines, trees, decals };
 }
@@ -94,6 +96,7 @@ function scatterDecals(rng: () => number, map: TileMap, density = 1): MapDecal[]
   const pebbleKeys = ['decal_pebble_0', 'decal_pebble_1'];
   const tuftKeys = ['decal_tuft_0', 'decal_tuft_1'];
   const mushroomKeys = ['decal_mushroom_0', 'decal_mushroom_1'];
+  const groundPatchKeys = ['decal_dirt_patch', 'decal_rock_pile'];
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       const t = map.get(x, y);
@@ -104,12 +107,14 @@ function scatterDecals(rng: () => number, map: TileMap, density = 1): MapDecal[]
       const pebbleChance = 0.085 * density;
       const mushroomChance = 0.09 * density;
       const twigChance = 0.095 * density;
+      const groundPatchChance = 0.102 * density;
       let key: string | null = null;
       if (roll < flowerChance) key = flowerKeys[Math.floor(rng() * flowerKeys.length)];
       else if (roll < tuftChance) key = tuftKeys[Math.floor(rng() * tuftKeys.length)];
       else if (roll < pebbleChance) key = pebbleKeys[Math.floor(rng() * pebbleKeys.length)];
       else if (roll < mushroomChance && t === TileType.Grass) key = mushroomKeys[Math.floor(rng() * mushroomKeys.length)];
       else if (roll < twigChance) key = 'decal_twig';
+      else if (roll < groundPatchChance && t !== TileType.Grass2) key = groundPatchKeys[Math.floor(rng() * groundPatchKeys.length)];
       if (!key) continue;
       decals.push({
         x: x * TILE + 4 + rng() * (TILE - 8),
@@ -167,6 +172,108 @@ function paintForestCluster(rng: () => number, map: TileMap, cx: number, cy: num
       if (!map.inBounds(x, y)) continue;
       const d = Math.hypot(dx, dy);
       if (d <= radius && rng() < 0.9 - d / (radius + 1)) map.set(x, y, TileType.Forest);
+    }
+  }
+}
+
+function addStartingForests(
+  rng: () => number,
+  map: TileMap,
+  playerBase: { tx: number; ty: number },
+  aiBase: { tx: number; ty: number },
+  goldMines: { tx: number; ty: number }[]
+): void {
+  const patches = [
+    { dx: -10, dy: -2, rx: 5, ry: 4 },
+    { dx: -2, dy: -10, rx: 5, ry: 4 },
+    { dx: 2, dy: -10, rx: 5, ry: 4 },
+    { dx: -8, dy: 8, rx: 4, ry: 4 },
+    { dx: 6, dy: -10, rx: 5, ry: 3 }
+  ];
+
+  for (const patch of patches) {
+    paintStartingForestPatch(rng, map, playerBase, playerBase.tx + patch.dx, playerBase.ty + patch.dy, patch.rx, patch.ry, goldMines);
+    const mirrored = mirror({ tx: playerBase.tx + patch.dx, ty: playerBase.ty + patch.dy });
+    paintStartingForestPatch(rng, map, aiBase, mirrored.tx, mirrored.ty, patch.rx, patch.ry, goldMines);
+  }
+}
+
+function paintStartingForestPatch(
+  rng: () => number,
+  map: TileMap,
+  base: { tx: number; ty: number },
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  goldMines: { tx: number; ty: number }[]
+): void {
+  for (let dy = -ry; dy <= ry; dy++) {
+    for (let dx = -rx; dx <= rx; dx++) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (!map.inBounds(x, y)) continue;
+      const t = map.get(x, y);
+      if (t !== TileType.Grass && t !== TileType.Grass2) continue;
+      if (!isFar(x, y, base, 8.8) || goldMines.some(m => !isFar(x, y, m, 6.4))) continue;
+      const norm = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+      if (norm <= 1 && rng() < 0.94 - norm * 0.22) map.set(x, y, TileType.Forest);
+    }
+  }
+}
+
+function addNorthernBaseTrees(
+  rng: () => number,
+  map: TileMap,
+  playerBase: { tx: number; ty: number },
+  aiBase: { tx: number; ty: number },
+  goldMines: { tx: number; ty: number }[],
+  trees: { tx: number; ty: number }[]
+): void {
+  const occupied = new Set(trees.map(t => `${t.tx}:${t.ty}`));
+  const patches = [
+    { dx: -7, dy: -5, rx: 4, ry: 2 },
+    { dx: -2, dy: -6, rx: 4, ry: 3 },
+    { dx: 4, dy: -6, rx: 5, ry: 3 },
+    { dx: 9, dy: -5, rx: 3, ry: 2 }
+  ];
+
+  for (const patch of patches) {
+    addForcedForestPatch(rng, map, playerBase, playerBase.tx + patch.dx, playerBase.ty + patch.dy, patch.rx, patch.ry, goldMines, trees, occupied);
+    const mirrored = mirror({ tx: playerBase.tx + patch.dx, ty: playerBase.ty + patch.dy });
+    addForcedForestPatch(rng, map, aiBase, mirrored.tx, mirrored.ty, patch.rx, patch.ry, goldMines, trees, occupied);
+  }
+}
+
+function addForcedForestPatch(
+  rng: () => number,
+  map: TileMap,
+  base: { tx: number; ty: number },
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  goldMines: { tx: number; ty: number }[],
+  trees: { tx: number; ty: number }[],
+  occupied: Set<string>
+): void {
+  for (let dy = -ry; dy <= ry; dy++) {
+    for (let dx = -rx; dx <= rx; dx++) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (!map.inBounds(x, y)) continue;
+      if (y >= base.ty - 2) continue;
+      const t = map.get(x, y);
+      if (t !== TileType.Grass && t !== TileType.Grass2 && t !== TileType.Forest) continue;
+      if (goldMines.some(m => !isFar(x, y, m, 5.5))) continue;
+      const norm = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+      if (norm > 1 || rng() > 0.98 - norm * 0.12) continue;
+      const key = `${x}:${y}`;
+      if (occupied.has(key)) continue;
+      map.set(x, y, TileType.Forest);
+      map.setWalkable(x, y, false);
+      trees.push({ tx: x, ty: y });
+      occupied.add(key);
     }
   }
 }

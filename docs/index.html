@@ -23,9 +23,14 @@
         transition: opacity 0.8s ease;
       }
       #menu-video.visible { opacity: 1; }
+      #game-over-screen:not(.visible) {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
     </style>
-    <script type="module" crossorigin src="/ashen-crown/assets/index-uVqQUVqc.js"></script>
-    <link rel="stylesheet" crossorigin href="/ashen-crown/assets/index-xKWR948h.css">
+    <script type="module" crossorigin src="/ashen-crown/assets/index-CLahIzTp.js"></script>
+    <link rel="stylesheet" crossorigin href="/ashen-crown/assets/index-hwx3H4TB.css">
   </head>
   <body>
     <video id="menu-video" autoplay muted loop playsinline></video>
@@ -43,11 +48,11 @@
           <div class="menu-section-label">Режим</div>
           <div class="menu-mode-row">
             <div class="menu-mode-card active" aria-current="true">
-              <div class="menu-mode-name">1v1 Skirmish</div>
+              <div class="menu-mode-name">Стычка 1×1</div>
               <div class="menu-mode-tag">выберите фракцию ниже</div>
             </div>
             <button class="menu-mode-card menu-story" type="button">
-              <div class="menu-mode-name">Story Map</div>
+              <div class="menu-mode-name">Сюжетная карта</div>
               <div class="menu-mode-tag">The Ashen Crown</div>
             </button>
           </div>
@@ -57,11 +62,11 @@
           <div class="menu-section-label">Фракция</div>
           <div class="menu-race-row">
             <button class="menu-race" data-race="alliance">
-              <div class="menu-race-name">Alliance</div>
+              <div class="menu-race-name">Альянс</div>
               <div class="menu-race-tag">сталь · башни · дисциплина</div>
             </button>
             <button class="menu-race" data-race="horde">
-              <div class="menu-race-name">Horde</div>
+              <div class="menu-race-name">Орда</div>
               <div class="menu-race-tag">кровь · костры · натиск</div>
             </button>
           </div>
@@ -70,16 +75,58 @@
         <div class="menu-section">
           <div class="menu-section-label">Сложность</div>
           <div class="menu-diff-row">
-            <button class="menu-diff" data-diff="easy">Easy</button>
-            <button class="menu-diff active" data-diff="normal">Normal</button>
-            <button class="menu-diff" data-diff="hard">Hard</button>
+            <button class="menu-diff" data-diff="easy">Легко</button>
+            <button class="menu-diff active" data-diff="normal">Обычно</button>
+            <button class="menu-diff" data-diff="hard">Сложно</button>
           </div>
         </div>
 
         <div class="menu-hints">
           <div>ЛКМ — выбор · Shift+ЛКМ — добавить · двойной ЛКМ — все на экране</div>
           <div>ПКМ — движение/атака/сбор · Ctrl+1..9 — группа · 1..9 — выбрать</div>
-          <div>Q — атака-движение · X — стоп · H — к ратуше · B — строить · R — restart · M — mute</div>
+          <div>Q — атака-движение · X — стоп · H — к ратуше · B — строить · R — рестарт · M — звук</div>
+        </div>
+      </div>
+
+      <button id="menu-debug-toggle" type="button" aria-haspopup="dialog">Debug</button>
+
+      <div id="menu-debug-panel" aria-hidden="true" role="dialog">
+        <div class="menu-debug-card">
+          <div class="menu-debug-header">
+            <div class="menu-debug-title">Debug-сценарии</div>
+            <button class="menu-debug-close" id="menu-debug-close" type="button" aria-label="Закрыть">×</button>
+          </div>
+
+          <div class="menu-debug-section-label">Сценарий</div>
+          <div class="menu-debug-row" id="menu-debug-scenarios">
+            <button type="button" data-scn="pathfinding">Поиск пути</button>
+            <button type="button" data-scn="perf-100">Перф 100</button>
+            <button type="button" data-scn="perf-300">Перф 300</button>
+            <button type="button" data-scn="perf-500">Перф 500</button>
+            <button type="button" data-scn="caravans">Караваны (быстро)</button>
+            <button type="button" data-scn="skirmish" class="active">Стычка</button>
+          </div>
+
+          <div class="menu-debug-section-label">Фракция</div>
+          <div class="menu-debug-row" id="menu-debug-races">
+            <button type="button" data-race="alliance" class="active">Альянс</button>
+            <button type="button" data-race="horde">Орда</button>
+          </div>
+
+          <div class="menu-debug-section-label">Сложность</div>
+          <div class="menu-debug-row" id="menu-debug-diffs">
+            <button type="button" data-diff="easy">Легко</button>
+            <button type="button" data-diff="normal" class="active">Обычно</button>
+            <button type="button" data-diff="hard">Сложно</button>
+          </div>
+
+          <div class="menu-debug-section-label">Seed</div>
+          <input type="number" id="menu-debug-seed" placeholder="случайный" inputmode="numeric">
+
+          <div class="menu-debug-actions">
+            <button type="button" class="btn-secondary" id="menu-debug-cancel">Отмена</button>
+            <button type="button" class="btn-primary menu-debug-start" id="menu-debug-start">Старт</button>
+          </div>
         </div>
       </div>
     </div>
@@ -97,9 +144,9 @@
       
       <div id="bottom-panel" class="glass-panel" style="display: none;">
         <div class="selection-info">
-          <h2 class="selection-title" id="ui-sel-title">Title</h2>
-          <div class="selection-stats" id="ui-sel-stats">Stats</div>
-          <div class="selection-summary" id="ui-sel-summary">Summary</div>
+          <h2 class="selection-title" id="ui-sel-title">Заголовок</h2>
+          <div class="selection-stats" id="ui-sel-stats">Характеристики</div>
+          <div class="selection-summary" id="ui-sel-summary">Сводка</div>
           <div id="ui-sel-progress-container" class="progress-container" style="display: none;">
             <div id="ui-sel-progress-fill" class="progress-fill"></div>
           </div>
@@ -122,6 +169,18 @@
       <div id="game-over-title">ПОБЕДА</div>
       <div id="game-over-summary" aria-live="polite"></div>
       <button class="btn-primary" id="btn-restart">Меню</button>
+    </div>
+
+    <div id="pause-screen" aria-hidden="true">
+      <div class="pause-card">
+        <div class="pause-title">Пауза</div>
+        <div class="pause-hint">ESC — продолжить</div>
+        <div class="pause-actions">
+          <button class="btn-primary" id="btn-pause-resume" type="button">Продолжить</button>
+          <button class="btn-secondary" id="btn-pause-restart" type="button">Перезапустить</button>
+          <button class="btn-secondary" id="btn-pause-menu" type="button">В главное меню</button>
+        </div>
+      </div>
     </div>
 
   </body>

@@ -40,12 +40,15 @@ export class ParticleFX {
   private dropped = 0;
   private activeBursts: ActiveBurst[] = [];
   private activeApprox = 0;
+  private readonly artScale: number;
 
   constructor(private scene: Phaser.Scene) {
+    this.artScale = this.resolveArtScale('px_spark', 16);
+    const s = this.artScale;
     this.sparks = this.createEmitter('px_spark', {
       speed: { min: 80, max: 220 },
       lifespan: 280,
-      scale: { start: 0.9, end: 0 },
+      scale: { start: 0.9 * s, end: 0 },
       alpha: { start: 1, end: 0 },
       gravityY: 160,
       blendMode: Phaser.BlendModes.ADD,
@@ -56,7 +59,7 @@ export class ParticleFX {
     this.blood = this.createEmitter('px_blood', {
       speed: { min: 60, max: 180 },
       lifespan: 500,
-      scale: { start: 1, end: 0.2 },
+      scale: { start: 1 * s, end: 0.2 * s },
       alpha: { start: 1, end: 0 },
       gravityY: 320,
       angle: { min: 0, max: 360 }
@@ -66,7 +69,7 @@ export class ParticleFX {
     this.dust = this.createEmitter('px_dust', {
       speed: { min: 20, max: 70 },
       lifespan: 380,
-      scale: { start: 0.7, end: 0 },
+      scale: { start: 0.7 * s, end: 0 },
       alpha: { start: 0.8, end: 0 },
       gravityY: -20,
       angle: { min: 0, max: 360 }
@@ -76,7 +79,7 @@ export class ParticleFX {
     this.dustBig = this.createEmitter('px_dust', {
       speed: { min: 50, max: 160 },
       lifespan: 700,
-      scale: { start: 1.3, end: 0 },
+      scale: { start: 1.3 * s, end: 0 },
       alpha: { start: 0.85, end: 0 },
       gravityY: -30,
       angle: { min: 0, max: 360 }
@@ -86,7 +89,7 @@ export class ParticleFX {
     this.flame = this.createEmitter('px_flame', {
       speed: { min: 40, max: 130 },
       lifespan: 500,
-      scale: { start: 1, end: 0.2 },
+      scale: { start: 1 * s, end: 0.2 * s },
       alpha: { start: 1, end: 0 },
       gravityY: -100,
       blendMode: Phaser.BlendModes.ADD,
@@ -97,7 +100,7 @@ export class ParticleFX {
     this.smokeDark = this.createEmitter('px_smoke_dark', {
       speed: { min: 20, max: 90 },
       lifespan: 1200,
-      scale: { start: 0.8, end: 1.8 },
+      scale: { start: 0.8 * s, end: 1.8 * s },
       alpha: { start: 0.8, end: 0 },
       gravityY: -60,
       angle: { min: 250, max: 290 }
@@ -107,7 +110,7 @@ export class ParticleFX {
     this.smokeLight = this.createEmitter('px_smoke_light', {
       speed: { min: 10, max: 40 },
       lifespan: 2200,
-      scale: { start: 0.5, end: 1.4 },
+      scale: { start: 0.5 * s, end: 1.4 * s },
       alpha: { start: 0.55, end: 0 },
       gravityY: -30,
       angle: { min: 250, max: 290 }
@@ -118,7 +121,7 @@ export class ParticleFX {
     this.debris = this.createEmitter('px_debris_1', {
       speed: { min: 120, max: 280 },
       lifespan: 900,
-      scale: { start: 1, end: 0.5 },
+      scale: { start: 1 * s, end: 0.5 * s },
       alpha: { start: 1, end: 0 },
       gravityY: 480,
       rotate: { start: 0, end: 720 },
@@ -129,7 +132,7 @@ export class ParticleFX {
     this.goldSparkle = this.createEmitter('px_star', {
       speed: { min: 30, max: 90 },
       lifespan: 600,
-      scale: { start: 1, end: 0 },
+      scale: { start: 1 * s, end: 0 },
       alpha: { start: 1, end: 0 },
       gravityY: 80,
       blendMode: Phaser.BlendModes.ADD,
@@ -140,7 +143,7 @@ export class ParticleFX {
     this.woodChip = this.createEmitter('px_debris_3', {
       speed: { min: 40, max: 120 },
       lifespan: 500,
-      scale: { start: 0.7, end: 0.3 },
+      scale: { start: 0.7 * s, end: 0.3 * s },
       alpha: { start: 1, end: 0 },
       gravityY: 300,
       rotate: { start: 0, end: 360 },
@@ -151,7 +154,7 @@ export class ParticleFX {
     this.leaves = this.createEmitter('px_leaf', {
       speed: { min: 8, max: 30 },
       lifespan: 4200,
-      scale: { start: 1, end: 0.6 },
+      scale: { start: 1 * s, end: 0.6 * s },
       alpha: { start: 0.75, end: 0 },
       gravityY: 8,
       rotate: { start: -60, end: 60 },
@@ -162,7 +165,7 @@ export class ParticleFX {
     this.mist = this.createEmitter('px_mist', {
       speed: { min: 3, max: 12 },
       lifespan: 5000,
-      scale: { start: 0.8, end: 1.6 },
+      scale: { start: 0.8 * s, end: 1.6 * s },
       alpha: { start: 0.3, end: 0 },
       angle: { min: 0, max: 360 }
     });
@@ -171,7 +174,7 @@ export class ParticleFX {
     this.embers = this.createEmitter('px_ember', {
       speed: { min: 18, max: 70 },
       lifespan: 850,
-      scale: { start: 0.9, end: 0 },
+      scale: { start: 0.9 * s, end: 0 },
       alpha: { start: 1, end: 0 },
       gravityY: -120,
       blendMode: Phaser.BlendModes.ADD,
@@ -182,7 +185,7 @@ export class ParticleFX {
     this.magic = this.createEmitter('px_rune', {
       speed: { min: 12, max: 46 },
       lifespan: 700,
-      scale: { start: 0.8, end: 0 },
+      scale: { start: 0.8 * s, end: 0 },
       alpha: { start: 0.95, end: 0 },
       rotate: { start: -90, end: 90 },
       blendMode: Phaser.BlendModes.ADD,
@@ -194,6 +197,12 @@ export class ParticleFX {
   private createEmitter(key: string, config: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig): Phaser.GameObjects.Particles.ParticleEmitter {
     const emitter = this.scene.add.particles(0, 0, key, { ...config, emitting: false });
     return emitter;
+  }
+
+  private resolveArtScale(key: string, expectedWidth: number): number {
+    const source = this.scene.textures.get(key).getSourceImage() as { width?: number };
+    if (!source.width || source.width <= expectedWidth * 1.5) return 1;
+    return expectedWidth / source.width;
   }
 
   private canSpend(count: number): boolean {
@@ -237,7 +246,7 @@ export class ParticleFX {
     const n = Phaser.Math.Between(25, 45);
     if (!this.canSpend(n)) return;
     const ang = Math.atan2(dirY, dirX) * 180 / Math.PI;
-    this.blood.setConfig({ angle: { min: ang - 70, max: ang + 70 }, scale: { start: 1.5, end: 0.2 } });
+    this.blood.setConfig({ angle: { min: ang - 70, max: ang + 70 }, scale: { start: 1.5 * this.artScale, end: 0.2 * this.artScale } });
     this.blood.explode(n, x, y);
   }
 
@@ -300,7 +309,7 @@ export class ParticleFX {
     const e = this.scene.add.particles(x, y, key, {
       speed: { min: 8, max: 30 },
       lifespan: dark ? 1400 : 1800,
-      scale: { start: 0.35, end: 1.2 },
+      scale: { start: 0.35 * this.artScale, end: 1.2 * this.artScale },
       alpha: { start: dark ? 0.7 : 0.5, end: 0 },
       gravityY: -40,
       angle: { min: 250, max: 290 },
@@ -323,7 +332,7 @@ export class ParticleFX {
       frequency: 30,
       lifespan: 380,
       speed: { min: 5, max: 20 },
-      scale: { start: 0.5, end: 0 },
+      scale: { start: 0.5 * this.artScale, end: 0 },
       alpha: { start: 0.6, end: 0 },
       gravityY: -20
     });

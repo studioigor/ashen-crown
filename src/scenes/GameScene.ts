@@ -33,7 +33,12 @@ import {
 
 type PerfScenarioSize = 100 | 300 | 500;
 
-export type GameInit = GameLaunchConfig & { debugPerfSize?: PerfScenarioSize };
+export type GameInit = GameLaunchConfig & {
+  debugPerfSize?: PerfScenarioSize;
+  debugPathfinding?: boolean;
+  debugPerf?: boolean;
+  debugCaravans?: boolean;
+};
 
 type Point = { x: number; y: number };
 type RepathReason = 'command' | 'group' | 'group-fallback' | 'attack-move' | 'target' | 'resource' | 'return' | 'build' | 'stuck';
@@ -73,6 +78,8 @@ const GROUP_LANE_OFFSET_MAX = TILE * 3.5;
 const GROUP_SLOT_ARRIVAL_RADIUS = 12;
 const GROUP_SLOT_SETTLE_RADIUS = 34;
 const GROUP_SLOT_AVOID_FADE_RADIUS = TILE * 3;
+const RESOURCE_GATHER_SOFT_REACH = TILE * 2.75;
+const RESOURCE_GATHER_WAIT_MS = 900;
 const PERF_UNIT_MIX: UnitKind[] = ['worker', 'footman', 'archer', 'knight', 'catapult', 'footman', 'archer', 'knight'];
 const CURSOR_HOTSPOTS: Record<string, { x: number; y: number }> = {
   cursor_default: { x: 2, y: 2 },
@@ -80,6 +87,13 @@ const CURSOR_HOTSPOTS: Record<string, { x: number; y: number }> = {
   cursor_build_ok: { x: 18, y: 18 },
   cursor_build_no: { x: 18, y: 18 },
   cursor_gather: { x: 18, y: 18 }
+};
+const HI_RES_DECAL_MIN_WIDTH = 24;
+const HI_RES_DECAL_SCALE = 0.5;
+const PROJECTILE_DISPLAY: Record<string, { width: number; height: number }> = {
+  projectile_arrow: { width: 16, height: 8 },
+  projectile_stone: { width: 14, height: 14 },
+  projectile_tower: { width: 18, height: 18 }
 };
 
 function freshSkirmishStats(): SkirmishStats {
@@ -160,6 +174,12 @@ export class GameScene extends Phaser.Scene {
   private debugPerf = false;
   private debugPerfSize: PerfScenarioSize = 100;
   private requestedPerfSize: PerfScenarioSize | null = null;
+  private requestedDebugPathfinding = false;
+  private requestedDebugPerf = false;
+  private requestedDebugCaravans = false;
+  private paused = false;
+  private pauseEl: HTMLElement | null = null;
+  private pauseHandlersBound = false;
   private debugPathfindingUnits: Unit[] = [];
   private debugPathfindingText: Phaser.GameObjects.Text | null = null;
   private debugPathfindingNextLogMs = 0;
@@ -192,6 +212,9 @@ export class GameScene extends Phaser.Scene {
 
   init(data: GameInit): void {
     this.requestedPerfSize = this.parsePerfScenarioSize(data?.debugPerfSize);
+    this.requestedDebugPathfinding = !!data?.debugPathfinding;
+    this.requestedDebugPerf = !!data?.debugPerf;
+    this.requestedDebugCaravans = !!data?.debugCaravans;
     const config = this.normalizeLaunchConfig(data);
     this.mode = config.mode;
     this.playerRace = config.playerRace;
@@ -264,8 +287,8 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.effects = new EffectsSystem(this);
     this.audio = new AudioSystem(this);
-    this.debugPathfinding = this.isDebugPathfindingEnabled();
-    this.debugPerf = !this.debugPathfinding && this.isDebugPerfEnabled();
+    this.debugPathfinding = this.requestedDebugPathfinding || this.isDebugPathfindingEnabled();
+    this.debugPerf = !this.debugPathfinding && (this.requestedDebugPerf || this.isDebugPerfEnabled());
     this.debugPerfSize = this.requestedPerfSize ?? this.getDebugPerfSizeFromQuery();
     this.layout = this.debugPathfinding
       ? this.createDebugPathfindingLayout()
@@ -293,7 +316,7 @@ export class GameScene extends Phaser.Scene {
       this.spawnInitial();
       this.centerOnTownhall();
     }
-    this.debugCaravans = this.isDebugCaravansEnabled();
+    this.debugCaravans = this.requestedDebugCaravans || this.isDebugCaravansEnabled();
     this.scheduleNextCaravan(true);
 
     this.fog = new FogOfWar(this, this.map);
@@ -326,6 +349,8 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on('ui-center-townhall', this.onUiCenterTownhall);
     this.game.events.on('ui-minimap-click', this.onUiMinimapClick);
 
+    this.setupPauseUi();
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.emitEntityHover(null);
       this.game.events.off('ui-build', this.onUiBuild);
@@ -334,6 +359,7 @@ export class GameScene extends Phaser.Scene {
       this.game.events.off('ui-autopilot', this.onUiAutopilot);
       this.game.events.off('ui-center-townhall', this.onUiCenterTownhall);
       this.game.events.off('ui-minimap-click', this.onUiMinimapClick);
+      this.teardownPauseUi();
       this.teardownDomCursor();
       this.cancelPlacement();
     });
@@ -347,7 +373,9 @@ export class GameScene extends Phaser.Scene {
       for (let x = 0; x < this.map.w; x++) {
         const t = this.map.get(x, y);
         const key = t === 4 /* Water */ ? 'tile_water_0' : this.map.tileTextureKey(t);
-        const s = this.add.image(x * TILE, y * TILE, key).setOrigin(0, 0);
+        const s = this.add.image(x * TILE, y * TILE, key)
+          .setOrigin(0, 0)
+          .setDisplaySize(TILE, TILE);
         this.tileLayer.add(s);
         if (t === 4) this.waterTiles.push(s);
       }
@@ -358,7 +386,7 @@ export class GameScene extends Phaser.Scene {
     decalContainer.setDepth(1);
     for (const d of this.layout.decals) {
       if (!this.textures.exists(d.key)) continue;
-      const img = this.add.image(d.x, d.y, d.key).setScale(d.scale).setRotation(d.rotation);
+      const img = this.add.image(d.x, d.y, d.key).setScale(d.scale * this.decalTextureScale(d.key)).setRotation(d.rotation);
       decalContainer.add(img);
     }
     // Water animation tick
@@ -390,6 +418,12 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  private decalTextureScale(key: string): number {
+    if (!key.startsWith('decal_')) return 1;
+    const source = this.textures.get(key).getSourceImage() as { width?: number };
+    return source.width && source.width >= HI_RES_DECAL_MIN_WIDTH ? HI_RES_DECAL_SCALE : 1;
   }
 
   private drawWaterEdge(g: Phaser.GameObjects.Graphics, tx: number, ty: number, wx: number, wy: number): void {
@@ -687,7 +721,11 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-H', () => this.centerOnTownhall());
     kb.on('keydown-R', () => this.restartGame());
     kb.on('keydown-M', () => this.flashMessage(this.audio.toggleMute() ? 'Звук выключен' : 'Звук включен'));
-    kb.on('keydown-ESC', () => { this.cancelPlacement(); this.setAttackMoveMode(false); });
+    kb.on('keydown-ESC', () => {
+      if (this.placementKind) { this.cancelPlacement(); return; }
+      if (this.attackMoveMode) { this.setAttackMoveMode(false); return; }
+      this.togglePause();
+    });
     kb.on('keydown-B', () => this.game.events.emit('ui-open-build'));
     kb.on('keydown-E', () => this.tryTrainHotkey('worker'));
     kb.on('keydown-F', () => this.tryTrainHotkey('footman'));
@@ -792,7 +830,7 @@ export class GameScene extends Phaser.Scene {
 
   private isClientOverUi(x: number, y: number): boolean {
     const el = document.elementFromPoint(x, y);
-    return !!el?.closest('#top-bar, #bottom-panel, #minimap-border, #game-over-screen.visible, #menu-layer.visible');
+    return !!el?.closest('#top-bar, #bottom-panel, #minimap-border, #game-over-screen.visible, #menu-layer.visible, #pause-screen.visible, #menu-debug-panel.visible');
   }
 
   private pointerClientPosition(p: Phaser.Input.Pointer): { x: number; y: number } {
@@ -1087,7 +1125,7 @@ export class GameScene extends Phaser.Scene {
     } else if (hit instanceof ResourceNode) {
       const workers = this.selected.filter(u => u.isWorker());
       if (workers.length) {
-        for (const u of workers) this.orderGather(u, hit);
+        this.orderGatherGroup(workers, hit);
         this.effects.targetMarker(hit, 0xffd84a, hit.resourceType === 'gold' ? 'Золото' : 'Дерево');
         this.audio.play('move');
       } else this.commandMoveTo(p.worldX, p.worldY);
@@ -1187,6 +1225,101 @@ export class GameScene extends Phaser.Scene {
     this.scene.restart({ ...this.launchConfig, seed: Math.floor(Math.random() * 100000) });
   }
 
+  private setupPauseUi(): void {
+    this.pauseEl = document.getElementById('pause-screen');
+    if (!this.pauseEl || this.pauseHandlersBound) return;
+    const resume = document.getElementById('btn-pause-resume');
+    const restart = document.getElementById('btn-pause-restart');
+    const menu = document.getElementById('btn-pause-menu');
+    if (resume) resume.onclick = () => this.togglePause();
+    if (restart) restart.onclick = () => this.restartFromPause();
+    if (menu) menu.onclick = () => this.exitToMainMenu();
+    this.hidePauseOverlay();
+    this.pauseHandlersBound = true;
+  }
+
+  private teardownPauseUi(): void {
+    this.hidePauseOverlay();
+    if (this.paused) {
+      this.paused = false;
+      window.removeEventListener('keydown', this.onPauseWindowKeydown);
+    }
+    if (this.pauseHandlersBound) {
+      const resume = document.getElementById('btn-pause-resume');
+      const restart = document.getElementById('btn-pause-restart');
+      const menu = document.getElementById('btn-pause-menu');
+      if (resume) resume.onclick = null;
+      if (restart) restart.onclick = null;
+      if (menu) menu.onclick = null;
+      this.pauseHandlersBound = false;
+    }
+  }
+
+  private togglePause(): void {
+    if (this.gameOver) return;
+    if (this.paused) this.resumeGame();
+    else this.pauseGame();
+  }
+
+  private pauseGame(): void {
+    if (this.paused) return;
+    this.paused = true;
+    this.cancelPlacement();
+    this.setAttackMoveMode(false);
+    this.showPauseOverlay();
+    window.addEventListener('keydown', this.onPauseWindowKeydown);
+    this.scene.pause();
+  }
+
+  private resumeGame(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    window.removeEventListener('keydown', this.onPauseWindowKeydown);
+    this.hidePauseOverlay();
+    this.scene.resume();
+  }
+
+  private showPauseOverlay(): void {
+    if (!this.pauseEl) return;
+    this.pauseEl.classList.add('visible');
+    this.pauseEl.setAttribute('aria-hidden', 'false');
+  }
+
+  private hidePauseOverlay(): void {
+    if (!this.pauseEl) return;
+    this.pauseEl.classList.remove('visible');
+    this.pauseEl.setAttribute('aria-hidden', 'true');
+  }
+
+  private onPauseWindowKeydown = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      this.resumeGame();
+    }
+  };
+
+  private restartFromPause(): void {
+    this.clearPauseState();
+    this.scene.resume();
+    this.restartGame();
+  }
+
+  private exitToMainMenu(): void {
+    this.clearPauseState();
+    this.scene.resume();
+    this.scene.stop('UIScene');
+    this.scene.stop('GameScene');
+    this.scene.start('MenuScene');
+  }
+
+  private clearPauseState(): void {
+    this.hidePauseOverlay();
+    if (this.paused) {
+      this.paused = false;
+      window.removeEventListener('keydown', this.onPauseWindowKeydown);
+    }
+  }
+
   private restartDebugPerfScenario(size: PerfScenarioSize): void {
     if (!this.debugPerf) return;
     this.scene.stop('UIScene');
@@ -1269,10 +1402,141 @@ export class GameScene extends Phaser.Scene {
     u.targetBuilding = target;
   }
 
-  orderGather(u: Unit, node: ResourceNode): void {
+  orderGather(u: Unit, node: ResourceNode, approach?: Point | null): void {
     u.clearOrders();
     u.state = 'gather';
     u.targetResource = node;
+    u.resourceApproach = approach ?? this.findResourceApproachSlot(u, node);
+    u.gatherAccum = 0;
+    const dest = u.resourceApproach ?? { x: node.x, y: node.y };
+    this.repath(u, dest.x, dest.y, 'resource', { force: true });
+  }
+
+  private orderGatherGroup(units: Unit[], node: ResourceNode): void {
+    const group = units.filter(u => u.alive && u.isWorker());
+    if (group.length === 0) return;
+
+    const ignored = new Set(group);
+    const reserved = this.resourceApproachReservations(node, ignored);
+    for (const u of group) {
+      const approach = this.findResourceApproachSlot(u, node, reserved, ignored);
+      if (approach) this.reserveFormationSlot(approach, reserved);
+      this.orderGather(u, node, approach);
+    }
+  }
+
+  private resourceApproachReservations(node: ResourceNode, ignored: Set<Unit>): Set<string> {
+    const reserved = new Set<string>();
+    for (const other of this.units) {
+      if (!other.alive || ignored.has(other) || other.targetResource !== node || !other.resourceApproach) continue;
+      const t = this.tileFromWorld(other.resourceApproach.x, other.resourceApproach.y);
+      if (this.map.isWalkable(t.tx, t.ty)) reserved.add(this.formationSlotKey(t.tx, t.ty));
+    }
+    return reserved;
+  }
+
+  private findResourceApproachSlot(
+    unit: Unit,
+    node: ResourceNode,
+    reserved?: Set<string>,
+    ignored?: Set<Unit>
+  ): Point | null {
+    const ignoredUnits = ignored ?? new Set<Unit>([unit]);
+    const reservedSlots = reserved ?? this.resourceApproachReservations(node, ignoredUnits);
+    const candidates = this.resourceApproachCandidates(unit, node)
+      .sort((a, b) => Phaser.Math.Distance.Between(unit.x, unit.y, a.x, a.y) - Phaser.Math.Distance.Between(unit.x, unit.y, b.x, b.y));
+
+    let fallback: Point | null = null;
+    for (const point of candidates) {
+      const t = this.tileFromWorld(point.x, point.y);
+      const key = this.formationSlotKey(t.tx, t.ty);
+      if (!reservedSlots.has(key) && !fallback) fallback = point;
+      if (this.isResourceApproachAvailable(unit, point, reservedSlots, ignoredUnits)) return point;
+    }
+    return fallback ?? candidates[0] ?? null;
+  }
+
+  private resourceApproachCandidates(unit: Unit, node: ResourceNode): Point[] {
+    const reach = this.gatherReach(unit);
+    const minTx = node.tx;
+    const minTy = node.ty;
+    const maxTx = node.tx + node.tileW - 1;
+    const maxTy = node.ty + node.tileH - 1;
+    const candidates: Point[] = [];
+    const seen = new Set<string>();
+
+    for (let r = 1; r <= 4; r++) {
+      for (let ty = minTy - r; ty <= maxTy + r; ty++) {
+        for (let tx = minTx - r; tx <= maxTx + r; tx++) {
+          if (tx > minTx - r && tx < maxTx + r && ty > minTy - r && ty < maxTy + r) continue;
+          if (!this.map.isWalkable(tx, ty)) continue;
+          const key = this.formationSlotKey(tx, ty);
+          if (seen.has(key)) continue;
+          const point = this.map.tileToWorld(tx, ty);
+          if (this.distanceToResourceFootprint(point.x, point.y, node) > reach) continue;
+          seen.add(key);
+          candidates.push(point);
+        }
+      }
+    }
+
+    return candidates;
+  }
+
+  private isResourceApproachAvailable(
+    unit: Unit,
+    point: Point,
+    reserved: Set<string>,
+    ignored: Set<Unit>
+  ): boolean {
+    const t = this.tileFromWorld(point.x, point.y);
+    if (!this.map.isWalkable(t.tx, t.ty)) return false;
+    if (reserved.has(this.formationSlotKey(t.tx, t.ty))) return false;
+    for (const other of this.queryUnitsInRadius(point.x, point.y, unit.radius + 48)) {
+      if (!other.alive || ignored.has(other)) continue;
+      const min = unit.radius + other.radius + 4;
+      if (Phaser.Math.Distance.Between(point.x, point.y, other.x, other.y) < min) return false;
+    }
+    return true;
+  }
+
+  private ensureResourceApproach(u: Unit, node: ResourceNode): Point | null {
+    if (u.resourceApproach && this.isResourceApproachStillValid(u, node, u.resourceApproach)) return u.resourceApproach;
+    u.resourceApproach = this.findResourceApproachSlot(u, node);
+    return u.resourceApproach;
+  }
+
+  private isResourceApproachStillValid(u: Unit, node: ResourceNode, point: Point): boolean {
+    const t = this.tileFromWorld(point.x, point.y);
+    return this.map.isWalkable(t.tx, t.ty)
+      && this.distanceToResourceFootprint(point.x, point.y, node) <= this.gatherReach(u);
+  }
+
+  private gatherReach(u: Unit): number {
+    return u.radius + TILE * 1.5;
+  }
+
+  private canGatherResource(u: Unit, distToFootprint: number): boolean {
+    if (distToFootprint <= this.gatherReach(u)) return true;
+    if (distToFootprint > u.radius + RESOURCE_GATHER_SOFT_REACH) return false;
+    return u.pathWaitMs >= RESOURCE_GATHER_WAIT_MS || u.pathStuckMs >= STUCK_REPATH_MS * 0.65;
+  }
+
+  private distanceToResourceFootprint(x: number, y: number, node: ResourceNode): number {
+    const left = node.tx * TILE;
+    const top = node.ty * TILE;
+    const right = (node.tx + node.tileW) * TILE;
+    const bottom = (node.ty + node.tileH) * TILE;
+    const closestX = Phaser.Math.Clamp(x, left, right);
+    const closestY = Phaser.Math.Clamp(y, top, bottom);
+    return Phaser.Math.Distance.Between(x, y, closestX, closestY);
+  }
+
+  private shouldRepathTo(u: Unit, dest: Point, maxAgeMs = 500): boolean {
+    return u.path.length === 0
+      || u.pathRepathMs > maxAgeMs
+      || !u.pathDest
+      || Phaser.Math.Distance.Between(u.pathDest.x, u.pathDest.y, dest.x, dest.y) > TILE * 0.5;
   }
 
   orderReturnCargo(u: Unit, hall: Building): void {
@@ -1870,19 +2134,24 @@ export class GameScene extends Phaser.Scene {
     const node = u.targetResource;
     if (!node || !node.alive) {
       if (u.cargo) { this.returnToNearestHall(u); return; }
+      u.resourceApproach = null;
       const newNode = this.findNearestResource(u, 'gold');
-      if (newNode) u.targetResource = newNode;
+      if (newNode) this.orderGather(u, newNode);
       else u.state = 'idle';
       return;
     }
-    const dist = Phaser.Math.Distance.Between(u.x, u.y, node.x, node.y);
-    const reach = node.radius + u.radius + TILE * 1.5;
-    if (dist > reach) {
-      if (u.path.length === 0 || u.pathRepathMs > 500) this.repath(u, node.x, node.y, 'resource');
+    const dist = this.distanceToResourceFootprint(u.x, u.y, node);
+    if (!this.canGatherResource(u, dist)) {
+      const approach = this.ensureResourceApproach(u, node);
+      const dest = approach ?? { x: node.x, y: node.y };
+      if (this.shouldRepathTo(u, dest)) this.repath(u, dest.x, dest.y, 'resource');
       this.stepPath(u, dt);
       return;
     }
     u.path = [];
+    u.moveIntentX = 0;
+    u.moveIntentY = 0;
+    if (u.gatherAccum === 0) u.playWorkSwing('gather');
     const prevGather = u.gatherAccum;
     u.gatherAccum += dt;
     if (Math.floor(prevGather / FEEL.gatherWorkPulseMs) !== Math.floor(u.gatherAccum / FEEL.gatherWorkPulseMs)) {
@@ -1929,10 +2198,10 @@ export class GameScene extends Phaser.Scene {
     const lastNode = u.targetResource;
     u.cargo = null;
     u.returnTo = null;
-    if (lastNode && lastNode.alive) u.state = 'gather';
+    if (lastNode && lastNode.alive) this.orderGather(u, lastNode);
     else {
       const t = this.findNearestResource(u, 'gold');
-      if (t) { u.targetResource = t; u.state = 'gather'; }
+      if (t) this.orderGather(u, t);
       else u.state = 'idle';
     }
   }
@@ -2557,6 +2826,8 @@ class Projectile {
     public source?: IEntity
   ) {
     this.sprite = scene.add.sprite(x, y, texture).setDepth(40);
+    const display = PROJECTILE_DISPLAY[texture];
+    if (display) this.sprite.setDisplaySize(display.width, display.height);
     this.speed = splashRadius > 0 ? 280 : 430;
     this.trailKind = splashRadius > 0 ? 'siege' : texture === 'projectile_tower' ? 'magic' : 'arrow';
   }

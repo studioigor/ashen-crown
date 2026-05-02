@@ -22,9 +22,11 @@ export class EffectsSystem {
   private textPool: Phaser.GameObjects.Text[] = [];
   private imagePool: Phaser.GameObjects.Image[] = [];
   private ambientMs = 0;
+  private readonly fxArtScale: number;
 
   constructor(private scene: Phaser.Scene) {
     this.fx = new ParticleFX(scene);
+    this.fxArtScale = this.resolveTextureScale('px_spark', 16);
   }
 
   setupPostFX(): void {
@@ -269,11 +271,11 @@ export class EffectsSystem {
       .setRotation(rotation)
       .setBlendMode(kind === 'magic' ? Phaser.BlendModes.ADD : Phaser.BlendModes.NORMAL)
       .setAlpha(kind === 'magic' ? 0.8 : 0.55)
-      .setScale(1);
+      .setScale(this.fxArtScale);
     this.scene.tweens.add({
       targets: img,
       alpha: 0,
-      scaleX: { from: kind === 'magic' ? 1 : 0.8, to: 0.1 },
+      scaleX: { from: (kind === 'magic' ? 1 : 0.8) * this.fxArtScale, to: 0.1 * this.fxArtScale },
       duration: kind === 'magic' ? 260 : 180,
       onComplete: () => this.releaseImage(img)
     });
@@ -307,12 +309,12 @@ export class EffectsSystem {
   shockwave(x: number, y: number, color: number): void {
     if (!this.isInView(x, y, 180)) return;
     const g = this.acquireImage('px_shockwave').setDepth(225);
-    g.setPosition(x, y).setScale(1).setAlpha(1).clearTint();
+    g.setPosition(x, y).setScale(this.fxArtScale).setAlpha(1).clearTint();
     g.setBlendMode(Phaser.BlendModes.ADD);
     g.setTint(color);
     this.scene.tweens.add({
       targets: g,
-      scale: { from: 0.2, to: 3.2 },
+      scale: { from: 0.2 * this.fxArtScale, to: 3.2 * this.fxArtScale },
       alpha: { from: 1, to: 0 },
       duration: 520,
       ease: 'Cubic.easeOut',
@@ -344,7 +346,7 @@ export class EffectsSystem {
       .setDepth(7)
       .setTint(color)
       .setAlpha(0.55)
-      .setScale(scale * (0.8 + Math.random() * 0.35))
+      .setScale(scale * this.fxArtScale * (0.8 + Math.random() * 0.35))
       .setRotation(Math.random() * Math.PI * 2);
     this.decals.push(decal);
     while (this.decals.length > VISUALS.maxPersistentDecals) {
@@ -468,6 +470,12 @@ export class EffectsSystem {
     img.setBlendMode(Phaser.BlendModes.NORMAL);
     img.setVisible(true).setActive(true).setAlpha(1).setScale(1).setRotation(0);
     return img;
+  }
+
+  private resolveTextureScale(key: string, expectedWidth: number): number {
+    const source = this.scene.textures.get(key).getSourceImage() as { width?: number };
+    if (!source.width || source.width <= expectedWidth * 1.5) return 1;
+    return expectedWidth / source.width;
   }
 
   private releaseImage(img: Phaser.GameObjects.Image): void {

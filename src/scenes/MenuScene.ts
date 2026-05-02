@@ -2,11 +2,18 @@ import Phaser from 'phaser';
 import { Race, Difficulty, STORY_MODE_DEFAULTS, type GameLaunchConfig } from '../config';
 import videoUrl from '../menu/video-background.mp4?url';
 import { ART_RUNTIME_MANIFEST_KEY, artAssetUrl, type RuntimeArtManifest } from '../assets/artManifest';
+import type { GameInit } from './GameScene';
+
+type DebugScenario = 'pathfinding' | 'perf-100' | 'perf-300' | 'perf-500' | 'caravans' | 'skirmish';
 
 export class MenuScene extends Phaser.Scene {
   private selectedDifficulty: Difficulty = 'normal';
   private menuEl: HTMLElement | null = null;
   private videoEl: HTMLVideoElement | null = null;
+  private debugPanelEl: HTMLElement | null = null;
+  private debugScenario: DebugScenario = 'skirmish';
+  private debugRace: Race = 'alliance';
+  private debugDifficulty: Difficulty = 'normal';
   private raceHandler = (e: Event): void => {
     const btn = (e.currentTarget as HTMLElement);
     const race = btn.dataset.race as Race;
@@ -18,6 +25,27 @@ export class MenuScene extends Phaser.Scene {
     this.refreshDifficulty();
   };
   private storyHandler = (): void => this.startStory();
+  private debugToggleHandler = (): void => this.openDebugPanel();
+  private debugCloseHandler = (): void => this.closeDebugPanel();
+  private debugScenarioHandler = (e: Event): void => {
+    const btn = e.currentTarget as HTMLElement;
+    this.debugScenario = btn.dataset.scn as DebugScenario;
+    this.refreshDebugSelection();
+  };
+  private debugRaceHandler = (e: Event): void => {
+    const btn = e.currentTarget as HTMLElement;
+    this.debugRace = btn.dataset.race as Race;
+    this.refreshDebugSelection();
+  };
+  private debugDiffHandler = (e: Event): void => {
+    const btn = e.currentTarget as HTMLElement;
+    this.debugDifficulty = btn.dataset.diff as Difficulty;
+    this.refreshDebugSelection();
+  };
+  private debugStartHandler = (): void => this.startDebugScenario();
+  private debugBackdropHandler = (e: Event): void => {
+    if (e.target === this.debugPanelEl) this.closeDebugPanel();
+  };
 
   constructor() { super('MenuScene'); }
 
@@ -52,6 +80,7 @@ export class MenuScene extends Phaser.Scene {
       this.menuEl.querySelectorAll<HTMLElement>('.menu-diff').forEach(b => b.addEventListener('click', this.diffHandler));
       this.menuEl.querySelectorAll<HTMLElement>('.menu-story').forEach(b => b.addEventListener('click', this.storyHandler));
       this.refreshDifficulty();
+      this.setupDebugPanel();
     }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
@@ -78,6 +107,7 @@ export class MenuScene extends Phaser.Scene {
       this.videoEl.classList.remove('visible');
       this.videoEl.pause();
     }
+    this.teardownDebugPanel();
   }
 
   private startSkirmish(race: Race): void {
@@ -118,5 +148,115 @@ export class MenuScene extends Phaser.Scene {
     this.menuEl.style.setProperty('--menu-bg-art', `url("${artAssetUrl('assets/art/menu/background_map.png')}")`);
     this.menuEl.classList.add('has-art-bg');
     if (this.videoEl) this.videoEl.classList.remove('visible');
+  }
+
+  private setupDebugPanel(): void {
+    const toggle = document.getElementById('menu-debug-toggle');
+    const panel = document.getElementById('menu-debug-panel');
+    const closeBtn = document.getElementById('menu-debug-close');
+    const cancelBtn = document.getElementById('menu-debug-cancel');
+    const startBtn = document.getElementById('menu-debug-start');
+    if (!toggle || !panel || !closeBtn || !cancelBtn || !startBtn) return;
+    this.debugPanelEl = panel;
+
+    toggle.addEventListener('click', this.debugToggleHandler);
+    closeBtn.addEventListener('click', this.debugCloseHandler);
+    cancelBtn.addEventListener('click', this.debugCloseHandler);
+    startBtn.addEventListener('click', this.debugStartHandler);
+    panel.addEventListener('click', this.debugBackdropHandler);
+
+    panel.querySelectorAll<HTMLElement>('#menu-debug-scenarios button').forEach(b => b.addEventListener('click', this.debugScenarioHandler));
+    panel.querySelectorAll<HTMLElement>('#menu-debug-races button').forEach(b => b.addEventListener('click', this.debugRaceHandler));
+    panel.querySelectorAll<HTMLElement>('#menu-debug-diffs button').forEach(b => b.addEventListener('click', this.debugDiffHandler));
+
+    this.refreshDebugSelection();
+  }
+
+  private teardownDebugPanel(): void {
+    const toggle = document.getElementById('menu-debug-toggle');
+    const panel = this.debugPanelEl;
+    const closeBtn = document.getElementById('menu-debug-close');
+    const cancelBtn = document.getElementById('menu-debug-cancel');
+    const startBtn = document.getElementById('menu-debug-start');
+    toggle?.removeEventListener('click', this.debugToggleHandler);
+    closeBtn?.removeEventListener('click', this.debugCloseHandler);
+    cancelBtn?.removeEventListener('click', this.debugCloseHandler);
+    startBtn?.removeEventListener('click', this.debugStartHandler);
+    panel?.removeEventListener('click', this.debugBackdropHandler);
+    panel?.querySelectorAll<HTMLElement>('#menu-debug-scenarios button').forEach(b => b.removeEventListener('click', this.debugScenarioHandler));
+    panel?.querySelectorAll<HTMLElement>('#menu-debug-races button').forEach(b => b.removeEventListener('click', this.debugRaceHandler));
+    panel?.querySelectorAll<HTMLElement>('#menu-debug-diffs button').forEach(b => b.removeEventListener('click', this.debugDiffHandler));
+    if (panel) {
+      panel.classList.remove('visible');
+      panel.setAttribute('aria-hidden', 'true');
+    }
+    this.debugPanelEl = null;
+  }
+
+  private openDebugPanel(): void {
+    if (!this.debugPanelEl) return;
+    this.debugPanelEl.classList.add('visible');
+    this.debugPanelEl.setAttribute('aria-hidden', 'false');
+  }
+
+  private closeDebugPanel(): void {
+    if (!this.debugPanelEl) return;
+    this.debugPanelEl.classList.remove('visible');
+    this.debugPanelEl.setAttribute('aria-hidden', 'true');
+  }
+
+  private refreshDebugSelection(): void {
+    if (!this.debugPanelEl) return;
+    this.debugPanelEl.querySelectorAll<HTMLElement>('#menu-debug-scenarios button').forEach(b => {
+      b.classList.toggle('active', b.dataset.scn === this.debugScenario);
+    });
+    this.debugPanelEl.querySelectorAll<HTMLElement>('#menu-debug-races button').forEach(b => {
+      b.classList.toggle('active', b.dataset.race === this.debugRace);
+    });
+    this.debugPanelEl.querySelectorAll<HTMLElement>('#menu-debug-diffs button').forEach(b => {
+      b.classList.toggle('active', b.dataset.diff === this.debugDifficulty);
+    });
+  }
+
+  private startDebugScenario(): void {
+    const seedInput = document.getElementById('menu-debug-seed') as HTMLInputElement | null;
+    const seedRaw = seedInput?.value.trim();
+    const seed = seedRaw ? Number(seedRaw) : NaN;
+    const overrideSeed = Number.isFinite(seed) ? Math.floor(seed) : undefined;
+
+    const baseConfig: GameLaunchConfig = {
+      mode: 'skirmish',
+      playerRace: this.debugRace,
+      difficulty: this.debugDifficulty
+    };
+
+    const init: GameInit = { ...baseConfig };
+    switch (this.debugScenario) {
+      case 'pathfinding':
+        init.debugPathfinding = true;
+        break;
+      case 'perf-100':
+        init.debugPerf = true;
+        init.debugPerfSize = 100;
+        break;
+      case 'perf-300':
+        init.debugPerf = true;
+        init.debugPerfSize = 300;
+        break;
+      case 'perf-500':
+        init.debugPerf = true;
+        init.debugPerfSize = 500;
+        break;
+      case 'caravans':
+        init.debugCaravans = true;
+        break;
+      case 'skirmish':
+      default:
+        break;
+    }
+
+    if (overrideSeed !== undefined) init.seed = overrideSeed;
+    this.closeDebugPanel();
+    this.scene.start('GameScene', init);
   }
 }

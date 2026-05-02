@@ -52,8 +52,6 @@ const BODY_HEIGHT: Record<UnitKind, number> = {
   worker: 40, footman: 44, archer: 44, knight: 52, catapult: 48
 };
 
-const UNIT_ART_FRAME_SIZE = 128;
-
 export class Unit implements IEntity {
   readonly id = newEntityId();
   readonly kind = 'unit' as const;
@@ -94,6 +92,7 @@ export class Unit implements IEntity {
   attackMoveTo: { x: number; y: number } | null = null;
   targetUnit: IEntity | null = null;
   targetResource: ResourceNode | null = null;
+  resourceApproach: { x: number; y: number } | null = null;
   targetBuilding: Building | null = null;
   returnTo: Building | null = null;
   cargo: { type: ResourceType; amount: number } | null = null;
@@ -138,8 +137,7 @@ export class Unit implements IEntity {
     this.sprite.setOrigin(0.5, this.usingArtSheet ? 0.58 : 0.5);
     if (this.usingArtSheet) {
       const display = UNIT_ART_DISPLAY[kind];
-      const renderSize = Math.max(display.width, display.height);
-      this.sprite.setScale(renderSize / UNIT_ART_FRAME_SIZE);
+      this.sprite.setDisplaySize(display.width, display.height);
     }
     this.sprite.setData('entity', this);
 
@@ -256,6 +254,7 @@ export class Unit implements IEntity {
     this.attackMoveTo = null;
     this.targetUnit = null;
     this.targetResource = null;
+    this.resourceApproach = null;
     this.targetBuilding = null;
     this.returnTo = null;
     this.state = 'idle';
@@ -525,8 +524,10 @@ export class Unit implements IEntity {
     }
     if (!this.cargoBadge) {
       const key = this.cargo.type === 'gold' ? 'px_star' : 'px_leaf';
+      const source = this.sprite.scene.textures.get(key).getSourceImage() as { width?: number };
+      const artScale = source.width && source.width > 24 ? 0.5 : 1;
       this.cargoBadge = this.sprite.scene.add.image(this.sprite.x, this.sprite.y - BODY_HEIGHT[this.unitKind] * 0.48, key)
-        .setScale(this.cargo.type === 'gold' ? 0.72 : 0.9)
+        .setScale((this.cargo.type === 'gold' ? 0.72 : 0.9) * artScale)
         .setAlpha(0.95)
         .setBlendMode(this.cargo.type === 'gold' ? Phaser.BlendModes.ADD : Phaser.BlendModes.NORMAL);
       if (this.cargo.type === 'gold') this.cargoBadge.setTint(0xffd36a);
