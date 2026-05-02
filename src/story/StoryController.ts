@@ -3,6 +3,7 @@ import type {
   StoryBuildingSnapshot,
   StoryCondition,
   StoryControllerGameApi,
+  StoryEndingLine,
   StoryEvent,
   StoryFlag,
   StoryMapDefinition,
@@ -24,9 +25,11 @@ export class StoryController {
   private currentPhaseId: StoryPhaseId;
   private objectives = new Map<string, StoryObjective>();
   private flags = new Map<StoryFlag, boolean>();
+  private flagChangedAtMs = new Map<StoryFlag, number>();
   private firedTriggers = new Set<string>();
   private enteredAreas = new Set<string>();
   private phaseStartedAtMs = 0;
+  private lastTimeMs = 0;
   private nextStateEvalMs = 0;
   private started = false;
 
@@ -40,11 +43,13 @@ export class StoryController {
   start(timeMs = 0): void {
     if (this.started) return;
     this.started = true;
+    this.lastTimeMs = timeMs;
     this.enterPhase(this.definition.initialPhase, timeMs);
   }
 
   update(timeMs: number, _dtMs: number): void {
     if (!this.started) return;
+    this.lastTimeMs = timeMs;
     this.evaluateTimerTriggers(timeMs);
     this.evaluateAreaTriggers(timeMs);
     if (timeMs >= this.nextStateEvalMs) {
@@ -56,6 +61,7 @@ export class StoryController {
 
   handle(event: StoryRuntimeEvent, timeMs = this.phaseStartedAtMs): void {
     if (!this.started) return;
+    this.lastTimeMs = timeMs;
     this.evaluateTriggers(event, timeMs);
     this.evaluateTriggers({ type: 'state' }, timeMs);
     this.publishObjectives();
@@ -89,8 +95,9 @@ export class StoryController {
     };
   }
 
-  setFlag(flag: StoryFlag, value: boolean): void {
+  setFlag(flag: StoryFlag, value: boolean, timeMs = this.lastTimeMs): void {
     this.flags.set(flag, value);
+    this.flagChangedAtMs.set(flag, timeMs);
   }
 
   private enterPhase(phaseId: StoryPhaseId, timeMs: number): void {
@@ -98,6 +105,7 @@ export class StoryController {
     if (!phase) return;
     this.currentPhaseId = phaseId;
     this.phaseStartedAtMs = timeMs;
+    this.lastTimeMs = timeMs;
     this.nextStateEvalMs = timeMs;
     this.objectives.clear();
     for (const objective of phase.objectives) {
@@ -171,7 +179,7 @@ export class StoryController {
           this.enterPhase(event.phase, timeMs);
           break;
         case 'setFlag':
-          this.setFlag(event.flag, event.value);
+          this.setFlag(event.flag, event.value, timeMs);
           break;
         case 'setObjectiveStatus':
           this.setObjectiveStatus(event.objectiveId, event.status);
@@ -188,14 +196,48 @@ export class StoryController {
         case 'playFx':
           this.game.playFx(event.kind, event.x, event.y, event.label);
           break;
+        case 'setLandmarkVisible':
+          this.game.setLandmarkVisible(event.id, event.visible);
+          break;
+        case 'setAtmosphere':
+          this.game.setAtmosphere(event.tone, event.durationMs);
+          break;
+        case 'revealArea':
+          this.game.revealArea(event.x, event.y, event.radiusTiles);
+          break;
         case 'spawnCaravan':
           this.game.spawnCaravan(event.route);
           break;
+        case 'spawnUnits':
+          this.game.spawnUnits(event.groupId, event.units);
+          break;
+        case 'commandGroup':
+          this.game.commandGroup(event.groupId, event.command);
+          break;
+        case 'grantResources':
+          this.game.grantResources(event.side, event.gold, event.lumber);
+          break;
+        case 'retreatPlayerUnits':
+          this.game.retreatPlayerUnits(event.count, event.kinds, event.x, event.y, event.radius, event.toX, event.toY, event.despawnAfterMs, event.label);
+          break;
+        case 'sacrificePlayerUnits':
+          this.game.sacrificePlayerUnits(event.count, event.kinds, event.x, event.y, event.radius, event.label);
+          break;
+        case 'damageOrDestroyBuilding':
+          this.game.damageOrDestroyBuilding(event.side, event.kind, event.damage, event.destroy, event.x, event.y, event.radius);
+          break;
         case 'endGame':
-          this.game.endGame(event.win);
+          this.game.endGame(event.win, this.resolveEndingLines(event.lines));
           break;
       }
     }
+  }
+
+  private resolveEndingLines(lines: StoryEndingLine[] | undefined): string[] | undefined {
+    if (!lines) return undefined;
+    return lines
+      .filter((line) => line.flag === undefined || (this.flags.get(line.flag) ?? false) === (line.value ?? true))
+      .map((line) => line.text);
   }
 
   private setObjectiveStatus(objectiveId: string, status: StoryObjectiveStatus): void {
@@ -215,12 +257,21 @@ export class StoryController {
     switch (condition.type) {
       case 'flag':
         return (this.flags.get(condition.flag) ?? false) === (condition.value ?? true);
+      case 'flagAgeMs': {
+        const valueMatches = (this.flags.get(condition.flag) ?? false) === (condition.value ?? true);
+        const changedAt = this.flagChangedAtMs.get(condition.flag);
+        return valueMatches && changedAt !== undefined && timeMs - changedAt >= condition.ms;
+      }
       case 'objectiveStatus':
         return this.objectives.get(condition.objectiveId)?.status === condition.status;
       case 'buildingCount':
         return countBuildings(this.game.getBuildings(), condition) >= condition.count;
       case 'unitCount':
         return countUnits(this.game.getUnits(), condition) >= condition.count;
+      case 'groupCount': {
+        const count = countUnits(this.game.getGroupUnits(condition.groupId), condition);
+        return condition.count === 0 ? count <= 0 : count >= condition.count;
+      }
       case 'elapsedMs':
         return timeMs - this.phaseStartedAtMs >= condition.ms;
       case 'event':
@@ -242,7 +293,7 @@ export class StoryController {
           .map((sub) => ({
             id: sub.id,
             title: sub.title,
-            status: sub.condition && this.conditionMet(sub.condition, { type: 'state' }, this.phaseStartedAtMs)
+            status: sub.condition && this.conditionMet(sub.condition, { type: 'state' }, this.lastTimeMs)
               ? 'completed'
               : sub.status ?? 'active'
           }))
@@ -293,7 +344,7 @@ function countBuildings(
 
 function countUnits(
   units: StoryUnitSnapshot[],
-  condition: Extract<StoryCondition, { type: 'unitCount' }>
+  condition: { side?: StoryUnitSnapshot['side']; kind?: UnitKind; count: number }
 ): number {
   return units.filter((unit) => {
     if (!unit.alive) return false;
@@ -306,6 +357,8 @@ function countUnits(
 function eventMatches(condition: Extract<StoryCondition, { type: 'event' }>, event: StoryRuntimeEvent): boolean {
   if (condition.eventType !== event.type) return false;
   if (condition.areaId && event.type === 'areaEntered' && event.areaId !== condition.areaId) return false;
+  if (condition.outcome && event.type === 'caravanResolved' && event.outcome !== condition.outcome) return false;
+  if (condition.bySide !== undefined && (!('bySide' in event) || event.bySide !== condition.bySide)) return false;
   if (condition.side !== undefined && 'side' in event && event.side !== condition.side) return false;
   if (condition.kind) {
     if (event.type === 'unitKilled' || event.type === 'unitTrained') return event.unitKind === condition.kind;

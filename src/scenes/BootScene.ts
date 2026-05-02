@@ -164,8 +164,8 @@ export class BootScene extends Phaser.Scene {
   // ---------------- TERRAIN TILES ----------------
 
   private makeTerrainTiles(): void {
-    this.makeGrassTile('tile_grass', 0x2f5627, 0x4d7a3b, 0x172b18);
-    this.makeGrassTile('tile_grass2', 0x3a6730, 0x5b8c42, 0x20381d);
+    this.makeGrassTile('tile_grass', COLORS.grass, 0x6f8246, 0x263416);
+    this.makeGrassTile('tile_grass2', COLORS.grass2, 0x7d914d, 0x2d3c1b);
     this.makeDirtTile();
     this.makeForestTile();
     this.makeStoneTile();

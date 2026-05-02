@@ -31,8 +31,10 @@ export class ParticleFX {
   private woodChip: Phaser.GameObjects.Particles.ParticleEmitter;
   private leaves: Phaser.GameObjects.Particles.ParticleEmitter;
   private mist: Phaser.GameObjects.Particles.ParticleEmitter;
+  private ash: Phaser.GameObjects.Particles.ParticleEmitter;
   private embers: Phaser.GameObjects.Particles.ParticleEmitter;
   private magic: Phaser.GameObjects.Particles.ParticleEmitter;
+  private glow: Phaser.GameObjects.Particles.ParticleEmitter;
   private budgetWindowMs = 0;
   private budgetUsed = 0;
   private budgetLimit: number = VISUALS.particleBudgetPerSecond;
@@ -171,6 +173,17 @@ export class ParticleFX {
     });
     this.mist.setDepth(999);
 
+    this.ash = this.createEmitter('px_smoke_light', {
+      speed: { min: 8, max: 32 },
+      lifespan: 3200,
+      scale: { start: 0.25 * s, end: 0.8 * s },
+      alpha: { start: 0.24, end: 0 },
+      gravityY: -24,
+      tint: [0xd0b99a, 0x7a6a5a],
+      angle: { min: 215, max: 325 }
+    });
+    this.ash.setDepth(214);
+
     this.embers = this.createEmitter('px_ember', {
       speed: { min: 18, max: 70 },
       lifespan: 850,
@@ -192,6 +205,17 @@ export class ParticleFX {
       angle: { min: 0, max: 360 }
     });
     this.magic.setDepth(217);
+
+    this.glow = this.createEmitter('px_glow', {
+      speed: { min: 8, max: 28 },
+      lifespan: 950,
+      scale: { start: 0.55 * s, end: 0 },
+      alpha: { start: 0.75, end: 0 },
+      rotate: { start: -45, end: 45 },
+      blendMode: Phaser.BlendModes.ADD,
+      angle: { min: 0, max: 360 }
+    });
+    this.glow.setDepth(216);
   }
 
   private createEmitter(key: string, config: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig): Phaser.GameObjects.Particles.ParticleEmitter {
@@ -292,12 +316,20 @@ export class ParticleFX {
     if (this.canSpend(2)) this.mist.explode(2, x, y);
   }
 
+  ashDrift(x: number, y: number, count = 4): void {
+    if (this.canSpend(count)) this.ash.explode(count, x, y);
+  }
+
   emberBurst(x: number, y: number, count = 20): void {
     if (this.canSpend(count)) this.embers.explode(count, x, y);
   }
 
   magicBurst(x: number, y: number, count = 24): void {
     if (this.canSpend(count)) this.magic.explode(count, x, y);
+  }
+
+  glowBurst(x: number, y: number, count = 14): void {
+    if (this.canSpend(count)) this.glow.explode(count, x, y);
   }
 
   /**

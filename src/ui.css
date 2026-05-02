@@ -179,6 +179,8 @@ body.game-cursor-active * {
   width: min(330px, calc(100vw - 36px));
   padding: 14px 16px;
   border-radius: 10px;
+  max-height: calc(100vh - 238px);
+  overflow-y: auto;
   opacity: 0;
   transform: translateX(-18px);
   pointer-events: none;
@@ -541,7 +543,7 @@ body.game-cursor-active * {
 #story-dialogue {
   position: absolute;
   left: 50%;
-  bottom: 148px;
+  bottom: clamp(132px, 20vh, 172px);
   width: min(760px, calc(100vw - 36px));
   transform: translateX(-50%) translateY(18px);
   opacity: 0;
@@ -592,6 +594,8 @@ body.game-cursor-active * {
   line-height: 1.35;
   font-weight: 600;
   overflow-wrap: anywhere;
+  max-height: 5.5em;
+  overflow-y: auto;
 }
 
 #story-dialogue-continue {
@@ -805,6 +809,22 @@ body.game-cursor-active * {
   font-variant-numeric: tabular-nums;
 }
 
+.story-ending-line {
+  max-width: min(680px, calc(100vw - 48px));
+  padding: 12px 18px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 223, 122, 0.12), transparent 34%),
+    rgba(18, 14, 10, 0.62);
+  border: 1px solid rgba(255, 223, 122, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 244, 214, 0.9);
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
 .btn-primary {
   padding: 18px 48px;
   font-family: inherit;
@@ -829,6 +849,37 @@ body.game-cursor-active * {
 .btn-primary:active {
   transform: scale(0.95);
   box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+@media (max-height: 700px) {
+  #story-objectives {
+    top: 66px;
+    max-height: calc(100vh - 214px);
+  }
+
+  #story-dialogue {
+    bottom: 116px;
+  }
+
+  .story-dialogue-box {
+    padding: 14px 16px;
+  }
+}
+
+@media (max-width: 920px) {
+  #bottom-panel {
+    width: calc(100% - 36px);
+    max-width: none;
+  }
+
+  .selection-info {
+    flex-basis: 260px;
+  }
+
+  .cmd-btn {
+    min-width: 136px;
+    font-size: 0.9rem;
+  }
 }
 
 /* ============ MAIN MENU ============ */
@@ -914,9 +965,18 @@ body.game-cursor-active * {
   margin-top: 6px;
   font-size: 0.95rem;
   font-weight: 500;
-  letter-spacing: 4px;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: rgba(255, 230, 180, 0.72);
+}
+
+#menu-lore {
+  max-width: 520px;
+  margin: 12px auto 0;
+  color: rgba(236, 222, 188, 0.66);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .menu-section { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }

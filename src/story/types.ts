@@ -58,12 +58,35 @@ export interface StoryCameraBeat {
   lockMs?: number;
 }
 
+export type StoryFxKind = 'marker' | 'smoke' | 'embers' | 'mist' | 'fire' | 'explosion' | 'glow' | 'ash' | 'dust';
+export type StoryAtmosphereTone = 'normal' | 'ashen' | 'forbidden';
+
+export interface StoryEndingLine {
+  text: string;
+  flag?: StoryFlag;
+  value?: boolean;
+}
+
 export interface StoryArea {
   id: string;
   x: number;
   y: number;
   radius: number;
   side?: Side;
+}
+
+export type StoryLandmarkKind = 'actor' | 'burnedRoad' | 'chapel' | 'crownSeal' | 'choiceObelisk';
+
+export interface StoryLandmark {
+  id: string;
+  kind: StoryLandmarkKind;
+  x: number;
+  y: number;
+  label: string;
+  visible?: boolean;
+  unitKind?: UnitKind;
+  race?: Race;
+  color?: number;
 }
 
 export interface StoryRestrictions {
@@ -74,6 +97,22 @@ export interface StoryRestrictions {
   defaultBuildReason?: string;
   defaultTrainReason?: string;
 }
+
+export interface StoryScriptedUnit {
+  kind: UnitKind;
+  side: Side;
+  race?: Race;
+  x: number;
+  y: number;
+}
+
+export type StoryGroupCommand =
+  | { type: 'move'; x: number; y: number }
+  | { type: 'attackMove'; x: number; y: number }
+  | { type: 'attackCaravan' }
+  | { type: 'attackTownhall' }
+  | { type: 'retreat'; x: number; y: number; despawnAfterMs?: number }
+  | { type: 'despawn' };
 
 export interface StoryPhase {
   id: StoryPhaseId;
@@ -110,11 +149,21 @@ export type StoryCondition =
   | { any: StoryCondition[] }
   | { not: StoryCondition }
   | { type: 'flag'; flag: StoryFlag; value?: boolean }
+  | { type: 'flagAgeMs'; flag: StoryFlag; ms: number; value?: boolean }
   | { type: 'objectiveStatus'; objectiveId: StoryObjectiveId; status: StoryObjectiveStatus }
   | { type: 'buildingCount'; side?: Side; kind?: BuildingKind; completed?: boolean; count: number }
   | { type: 'unitCount'; side?: Side; kind?: UnitKind; count: number }
+  | { type: 'groupCount'; groupId: string; side?: Side; kind?: UnitKind; count: number }
   | { type: 'elapsedMs'; ms: number }
-  | { type: 'event'; eventType: StoryTriggerEventType; side?: Side; kind?: UnitKind | BuildingKind; areaId?: string };
+  | {
+      type: 'event';
+      eventType: StoryTriggerEventType;
+      side?: Side;
+      kind?: UnitKind | BuildingKind;
+      areaId?: string;
+      outcome?: 'destroyed' | 'escaped';
+      bySide?: Side;
+    };
 
 export type StoryEvent =
   | { type: 'setPhase'; phase: StoryPhaseId }
@@ -123,9 +172,18 @@ export type StoryEvent =
   | { type: 'showDialogue'; lines: StoryDialogueLine[] }
   | { type: 'focusCamera'; beat: StoryCameraBeat }
   | { type: 'showMessage'; text: string }
-  | { type: 'playFx'; kind: 'marker' | 'smoke' | 'embers' | 'mist'; x: number; y: number; label?: string }
+  | { type: 'playFx'; kind: StoryFxKind; x: number; y: number; label?: string }
+  | { type: 'setLandmarkVisible'; id: string; visible: boolean }
+  | { type: 'setAtmosphere'; tone: StoryAtmosphereTone; durationMs?: number }
+  | { type: 'revealArea'; x: number; y: number; radiusTiles: number }
   | { type: 'spawnCaravan'; route: Array<{ x: number; y: number }> }
-  | { type: 'endGame'; win: boolean };
+  | { type: 'spawnUnits'; groupId: string; units: StoryScriptedUnit[] }
+  | { type: 'commandGroup'; groupId: string; command: StoryGroupCommand }
+  | { type: 'grantResources'; side: Side; gold?: number; lumber?: number }
+  | { type: 'retreatPlayerUnits'; count: number; kinds?: UnitKind[]; x?: number; y?: number; radius?: number; toX: number; toY: number; despawnAfterMs?: number; label?: string }
+  | { type: 'sacrificePlayerUnits'; count: number; kinds?: UnitKind[]; x?: number; y?: number; radius?: number; label?: string }
+  | { type: 'damageOrDestroyBuilding'; side: Side; kind?: BuildingKind; damage?: number; destroy?: boolean; x?: number; y?: number; radius?: number }
+  | { type: 'endGame'; win: boolean; lines?: StoryEndingLine[] };
 
 export type StoryRuntimeEvent =
   | { type: 'state' }
@@ -161,9 +219,19 @@ export interface StoryControllerGameApi {
   emitDialogue(payload: StoryDialoguePayload): void;
   focusCamera(beat: StoryCameraBeat): void;
   showMessage(text: string): void;
-  playFx(kind: 'marker' | 'smoke' | 'embers' | 'mist', x: number, y: number, label?: string): void;
+  playFx(kind: StoryFxKind, x: number, y: number, label?: string): void;
+  setLandmarkVisible(id: string, visible: boolean): void;
+  setAtmosphere(tone: StoryAtmosphereTone, durationMs?: number): void;
+  revealArea(x: number, y: number, radiusTiles: number): void;
   spawnCaravan(route: Array<{ x: number; y: number }>): void;
-  endGame(win: boolean): void;
+  spawnUnits(groupId: string, units: StoryScriptedUnit[]): void;
+  commandGroup(groupId: string, command: StoryGroupCommand): void;
+  getGroupUnits(groupId: string): StoryUnitSnapshot[];
+  grantResources(side: Side, gold?: number, lumber?: number): void;
+  retreatPlayerUnits(count: number, kinds: UnitKind[] | undefined, x: number | undefined, y: number | undefined, radius: number | undefined, toX: number, toY: number, despawnAfterMs?: number, label?: string): void;
+  sacrificePlayerUnits(count: number, kinds?: UnitKind[], x?: number, y?: number, radius?: number, label?: string): void;
+  damageOrDestroyBuilding(side: Side, kind?: BuildingKind, damage?: number, destroy?: boolean, x?: number, y?: number, radius?: number): void;
+  endGame(win: boolean, storyLines?: string[]): void;
 }
 
 export interface StoryStartingUnit {
@@ -205,6 +273,7 @@ export interface StoryMapDefinition {
   startingUnits: StoryStartingUnit[];
   startingBuildings: StoryStartingBuilding[];
   startingResources: StoryStartingResource[];
+  landmarks?: StoryLandmark[];
   phases: StoryPhase[];
   triggers: StoryTrigger[];
 }

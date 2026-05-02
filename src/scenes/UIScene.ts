@@ -651,10 +651,15 @@ export class UIScene extends Phaser.Scene {
 
   private showGameOver(result: GameOverPayload | boolean): void {
     const win = typeof result === 'boolean' ? result : result.win;
+    const payload = typeof result === 'boolean' ? null : result;
     this.elGameOver.classList.add('visible');
-    this.elGameOverTitle.innerText = win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ';
+    this.elGameOverTitle.innerText = payload?.story?.title ?? (win ? 'ПОБЕДА' : 'ПОРАЖЕНИЕ');
     this.elGameOverTitle.className = win ? 'win' : 'lose';
-    this.elGameOverSummary.innerHTML = typeof result === 'boolean' ? '' : renderSkirmishSummary(result.summary);
+    this.elGameOverSummary.innerHTML = payload?.story
+      ? renderStorySummary(payload.story.lines)
+      : payload?.summary
+        ? renderSkirmishSummary(payload.summary)
+        : '';
   }
 
   private drawMinimap(): void {
@@ -673,12 +678,12 @@ export class UIScene extends Phaser.Scene {
         if (!explored) continue;
         
         const t = this.game_.map.get(x, y);
-        let c = '#365f2a';
-        if (t === 2) c = '#174522';
-        else if (t === 3) c = '#626b70';
-        else if (t === 4) c = '#1c5f8c';
-        else if (t === 5) c = '#6b5b3a';
-        else if (t === 1) c = '#426f32';
+        let c = '#435f2d';
+        if (t === 2) c = '#24451f';
+        else if (t === 3) c = '#676663';
+        else if (t === 4) c = '#1c607f';
+        else if (t === 5) c = '#735234';
+        else if (t === 1) c = '#536f36';
         
         this.mmCtx.fillStyle = c;
         this.mmCtx.fillRect(x * scale, y * scale, iScale, iScale);
@@ -772,7 +777,13 @@ function renderSkirmishSummary(summary: SkirmishSummary): string {
     ['Караваны', `${summary.caravansLooted}`]
   ];
   return rows
-    .map(([label, value]) => `<div class="game-over-summary-row"><span>${label}</span><strong>${value}</strong></div>`)
+    .map(([label, value]) => `<div class="game-over-summary-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+    .join('');
+}
+
+function renderStorySummary(lines: string[]): string {
+  return lines
+    .map((line) => `<div class="story-ending-line">${escapeHtml(line)}</div>`)
     .join('');
 }
 

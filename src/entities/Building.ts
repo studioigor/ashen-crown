@@ -53,6 +53,7 @@ export class Building implements IEntity {
   flag: Phaser.GameObjects.Graphics;
   private chimneySmoke: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private constructionDust: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+  private damageSmoke: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private productionGlow: Phaser.GameObjects.Graphics;
   private currentStage: Stage = 'final';
   private flagPhase = Math.random() * Math.PI * 2;
@@ -172,6 +173,9 @@ export class Building implements IEntity {
 
   private updateDamageOverlay(): void {
     const hpFrac = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
+    if (this.completed && hpFrac < 0.42) this.maybeStartDamageSmoke();
+    else this.stopDamageSmoke();
+
     if (hpFrac >= 0.75) {
       this.damageOverlay.setAlpha(0);
       return;
@@ -195,6 +199,10 @@ export class Building implements IEntity {
       this.constructionDust.stop();
       this.constructionDust = null;
     }
+    if (this.damageSmoke) {
+      this.damageSmoke.stop();
+      this.damageSmoke = null;
+    }
   }
 
   private maybeStartChimney(): void {
@@ -210,6 +218,24 @@ export class Building implements IEntity {
     else if (this.buildingKind === 'townhall') { ox = -r + 34; oy = -r + 12; }
     else if (this.buildingKind === 'barracks') { ox = -r + 24; oy = -r + 14; }
     this.chimneySmoke = anyScene.effects.fx.continuousSmoke(this.sprite.x + ox, this.sprite.y + oy, false);
+  }
+
+  private maybeStartDamageSmoke(): void {
+    if (this.damageSmoke) return;
+    const anyScene = this.sprite.scene as any;
+    if (!anyScene.effects?.fx?.continuousSmoke) return;
+    const r = this.visualRadius;
+    this.damageSmoke = anyScene.effects.fx.continuousSmoke(
+      this.sprite.x + r * 0.12,
+      this.sprite.y - r * 0.32,
+      true
+    );
+  }
+
+  private stopDamageSmoke(): void {
+    if (!this.damageSmoke) return;
+    this.damageSmoke.stop();
+    this.damageSmoke = null;
   }
 
   private drawFlag(phase: number): void {
@@ -267,6 +293,10 @@ export class Building implements IEntity {
     if (this.constructionDust) {
       if (v) this.constructionDust.start();
       else this.constructionDust.stop();
+    }
+    if (this.damageSmoke) {
+      if (v) this.damageSmoke.start();
+      else this.damageSmoke.stop();
     }
   }
 

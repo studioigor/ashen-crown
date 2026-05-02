@@ -5,6 +5,7 @@ import { ParticleFX } from './ParticleFX';
 
 type CommandKind = 'move' | 'attack' | 'build' | 'gather' | 'return' | 'rally';
 type TrailKind = 'arrow' | 'siege' | 'magic';
+type AmbientTone = 'normal' | 'ashen' | 'forbidden';
 
 export interface EffectsStats {
   floatingTexts: number;
@@ -281,15 +282,23 @@ export class EffectsSystem {
     });
   }
 
-  ambientViewportTick(dt: number, view: Phaser.Geom.Rectangle): void {
+  ambientViewportTick(dt: number, view: Phaser.Geom.Rectangle, tone: AmbientTone = 'normal'): void {
     this.ambientMs += dt;
     if (this.ambientMs < VISUALS.ambientEveryMs) return;
     this.ambientMs = 0;
-    if (Math.random() < VISUALS.ambientLeafChance) {
+    const leafChance = tone === 'normal' ? VISUALS.ambientLeafChance : VISUALS.ambientLeafChance * 0.35;
+    const mistChance = tone === 'forbidden' ? VISUALS.ambientMistChance * 1.3 : VISUALS.ambientMistChance;
+    if (Math.random() < leafChance) {
       this.fx.ambientLeaf(view.x + Math.random() * view.width, view.y + 20 + Math.random() * view.height * 0.45);
     }
-    if (Math.random() < VISUALS.ambientMistChance) {
+    if (Math.random() < mistChance) {
       this.fx.ambientMist(view.x + Math.random() * view.width, view.y + view.height * (0.55 + Math.random() * 0.35));
+    }
+    if (tone !== 'normal' && Math.random() < 0.64) {
+      this.fx.ashDrift(view.x + Math.random() * view.width, view.y + Math.random() * view.height * 0.7, tone === 'forbidden' ? 4 : 3);
+    }
+    if (tone === 'forbidden' && Math.random() < 0.24) {
+      this.fx.emberBurst(view.x + Math.random() * view.width, view.y + view.height * (0.25 + Math.random() * 0.55), 2);
     }
   }
 

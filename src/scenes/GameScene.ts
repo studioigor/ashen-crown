@@ -25,13 +25,28 @@ import { SpatialIndex } from '../systems/SpatialIndex';
 import { nearestReachableWalkable } from '../world/MapValidation';
 import { StoryController } from '../story/StoryController';
 import { createStoryMap } from '../story/storyMap';
-import type { StoryCameraBeat, StoryControllerGameApi, StoryMapDefinition, StoryRuntimeEvent } from '../story/types';
+import type {
+  StoryAtmosphereTone,
+  StoryCameraBeat,
+  StoryControllerGameApi,
+  StoryFxKind,
+  StoryGroupCommand,
+  StoryLandmark,
+  StoryMapDefinition,
+  StoryRuntimeEvent,
+  StoryScriptedUnit,
+  StoryUnitSnapshot
+} from '../story/types';
 import {
   BUILDING_ART_DISPLAY,
+  CARAVAN_ART_DISPLAY,
+  UNIT_ART_DISPLAY,
   artAssetUrl,
   buildingArtReady,
   buildingSheetKey,
-  getBuildingStageFrame
+  caravanSheetKey,
+  getBuildingStageFrame,
+  unitSheetKey
 } from '../assets/artManifest';
 
 type PerfScenarioSize = 100 | 300 | 500;
@@ -54,9 +69,15 @@ export interface SkirmishSummary {
   caravansLooted: number;
 }
 
+export interface StoryGameOverSummary {
+  title: string;
+  lines: string[];
+}
+
 export interface GameOverPayload {
   win: boolean;
-  summary: SkirmishSummary;
+  summary?: SkirmishSummary;
+  story?: StoryGameOverSummary;
 }
 
 interface SkirmishStats {
@@ -70,6 +91,12 @@ interface SkirmishStats {
 interface SharedGroupPath {
   points: Point[];
   tailCache: Map<string, Point[] | null>;
+}
+
+interface StoryRevealArea {
+  tx: number;
+  ty: number;
+  radiusTiles: number;
 }
 
 const MAX_REPATHS_PER_FRAME = 8;
@@ -98,6 +125,23 @@ const PROJECTILE_DISPLAY: Record<string, { width: number; height: number }> = {
   projectile_stone: { width: 14, height: 14 },
   projectile_tower: { width: 18, height: 18 }
 };
+const STORY_LANDMARK_SCALE = 2 / 3;
+
+function hexColor(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
+function atmosphereSpec(tone: StoryAtmosphereTone): { color: number; alpha: number; blendMode: number } {
+  switch (tone) {
+    case 'ashen':
+      return { color: 0x5a4733, alpha: 0.09, blendMode: Phaser.BlendModes.MULTIPLY };
+    case 'forbidden':
+      return { color: 0xff7a32, alpha: 0.075, blendMode: Phaser.BlendModes.ADD };
+    case 'normal':
+    default:
+      return { color: 0xffd7a0, alpha: 0.035, blendMode: Phaser.BlendModes.ADD };
+  }
+}
 
 function freshSkirmishStats(): SkirmishStats {
   return {
@@ -107,6 +151,16 @@ function freshSkirmishStats(): SkirmishStats {
     resourcesGathered: { gold: 0, lumber: 0 },
     caravansLooted: 0
   };
+}
+
+function unitSacrificeRank(unit: Unit): number {
+  switch (unit.unitKind) {
+    case 'footman': return 0;
+    case 'archer': return 1;
+    case 'knight': return 2;
+    case 'catapult': return 3;
+    case 'worker': return 4;
+  }
 }
 
 export class GameScene extends Phaser.Scene {
@@ -203,7 +257,13 @@ export class GameScene extends Phaser.Scene {
   private skirmishStats: SkirmishStats = freshSkirmishStats();
   private storyMapDefinition: StoryMapDefinition | null = null;
   private storyController: StoryController | null = null;
+  private storyGroups = new Map<string, Set<number>>();
+  private storyRevealAreas: StoryRevealArea[] = [];
+  private storyLandmarks = new Map<string, Phaser.GameObjects.GameObject[]>();
   private storyControlLockUntilMs = 0;
+  private storyAtmosphereTone: StoryAtmosphereTone = 'normal';
+  private storyAtmosphereUntilMs = 0;
+  private storyAtmosphereOverlay: Phaser.GameObjects.Rectangle | null = null;
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -238,6 +298,9 @@ export class GameScene extends Phaser.Scene {
     this.lastUnderAttackMs = -9999;
     this.lastClick = null;
     this.caravanNextSpawnMs = Infinity;
+    this.storyAtmosphereTone = 'normal';
+    this.storyAtmosphereUntilMs = 0;
+    this.storyAtmosphereOverlay = null;
     this.caravanRouteFlip = false;
     this.debugCaravans = false;
     this.debugPathfinding = false;
@@ -258,6 +321,9 @@ export class GameScene extends Phaser.Scene {
     this.unitSpatialReady = false;
     this.storyMapDefinition = null;
     this.storyController = null;
+    this.storyGroups = new Map();
+    this.storyRevealAreas = [];
+    this.storyLandmarks = new Map();
     this.storyControlLockUntilMs = 0;
     this.nextGroupMoveId = 1;
     this.repathsThisFrame = 0;
@@ -311,9 +377,10 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setZoom(CAMERA_ZOOM);
-    this.cameras.main.setBackgroundColor('#2a4a22');
+    this.cameras.main.setBackgroundColor(hexColor(COLORS.grass));
     this.effects.setupPostFX();
     this.effects.setupVignette();
+    this.setupStoryAtmosphereOverlay();
 
     const start = SKIRMISH_CONFIG.start;
     const debugCap = this.debugPathfinding || this.debugPerf ? 1000 : 0;
@@ -339,6 +406,7 @@ export class GameScene extends Phaser.Scene {
     this.skirmishStats.startedAtMs = this.time.now;
 
     this.drawTiles();
+    if (this.storyMapDefinition?.landmarks) this.createStoryLandmarks(this.storyMapDefinition.landmarks);
     if (this.debugPathfinding) this.spawnDebugPathfindingScenario();
     else if (this.debugPerf) this.spawnDebugPerfScenario(this.debugPerfSize);
     else if (this.storyMapDefinition) {
@@ -559,13 +627,66 @@ export class GameScene extends Phaser.Scene {
       focusCamera: (beat) => this.focusStoryCamera(beat),
       showMessage: (text) => this.flashMessage(text),
       playFx: (kind, x, y, label) => this.playStoryFx(kind, x, y, label),
+      setLandmarkVisible: (id, visible) => this.setStoryLandmarkVisible(id, visible),
+      setAtmosphere: (tone, durationMs) => this.setStoryAtmosphere(tone, durationMs),
+      revealArea: (x, y, radiusTiles) => this.revealStoryArea(x, y, radiusTiles),
       spawnCaravan: (route) => this.spawnStoryCaravan(route),
-      endGame: (win) => this.endStoryGame(win)
+      spawnUnits: (groupId, units) => this.spawnStoryUnits(groupId, units),
+      commandGroup: (groupId, command) => this.commandStoryGroup(groupId, command),
+      getGroupUnits: (groupId) => this.getStoryGroupSnapshots(groupId),
+      grantResources: (side, gold, lumber) => this.grantStoryResources(side, gold, lumber),
+      retreatPlayerUnits: (count, kinds, x, y, radius, toX, toY, despawnAfterMs, label) => this.retreatPlayerUnits(count, kinds, x, y, radius, toX, toY, despawnAfterMs, label),
+      sacrificePlayerUnits: (count, kinds, x, y, radius, label) => this.sacrificePlayerUnits(count, kinds, x, y, radius, label),
+      damageOrDestroyBuilding: (side, kind, damage, destroy, x, y, radius) => this.damageOrDestroyStoryBuilding(side, kind, damage, destroy, x, y, radius),
+      endGame: (win, storyLines) => this.endStoryGame(win, storyLines)
     };
   }
 
   private emitStoryEvent(event: StoryRuntimeEvent): void {
     this.storyController?.handle(event, this.time.now);
+  }
+
+  private setupStoryAtmosphereOverlay(): void {
+    const cam = this.cameras.main;
+    this.storyAtmosphereOverlay = this.add.rectangle(0, 0, cam.width, cam.height, 0xffd7a0, 1)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(1190)
+      .setAlpha(0.035)
+      .setBlendMode(Phaser.BlendModes.ADD);
+  }
+
+  private setStoryAtmosphere(tone: StoryAtmosphereTone, durationMs?: number): void {
+    this.storyAtmosphereTone = tone;
+    this.storyAtmosphereUntilMs = durationMs === undefined ? 0 : this.time.now + durationMs;
+    this.applyStoryAtmosphereTone(tone, 520);
+  }
+
+  private updateStoryAtmosphereOverlay(): void {
+    const overlay = this.storyAtmosphereOverlay;
+    if (!overlay) return;
+    const cam = this.cameras.main;
+    if (overlay.width !== cam.width || overlay.height !== cam.height) overlay.setSize(cam.width, cam.height);
+    if (this.storyAtmosphereUntilMs > 0 && this.time.now >= this.storyAtmosphereUntilMs) {
+      this.storyAtmosphereUntilMs = 0;
+      this.storyAtmosphereTone = 'normal';
+      this.applyStoryAtmosphereTone('normal', 700);
+    }
+  }
+
+  private applyStoryAtmosphereTone(tone: StoryAtmosphereTone, duration: number): void {
+    const overlay = this.storyAtmosphereOverlay;
+    if (!overlay) return;
+    const spec = atmosphereSpec(tone);
+    overlay.setFillStyle(spec.color, 1);
+    overlay.setBlendMode(spec.blendMode);
+    this.tweens.killTweensOf(overlay);
+    this.tweens.add({
+      targets: overlay,
+      alpha: spec.alpha,
+      duration,
+      ease: 'Sine.easeOut'
+    });
   }
 
   private focusStoryCamera(beat: StoryCameraBeat): void {
@@ -587,7 +708,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private playStoryFx(kind: 'marker' | 'smoke' | 'embers' | 'mist', x: number, y: number, label?: string): void {
+  private playStoryFx(kind: StoryFxKind, x: number, y: number, label?: string): void {
     if (kind === 'marker') {
       this.effects.commandMarker(x, y, 0xffd36a, 'rally', label);
       return;
@@ -602,7 +723,170 @@ export class GameScene extends Phaser.Scene {
       this.effects.fx.emberBurst(x, y, 18);
       return;
     }
+    if (kind === 'ash') {
+      this.effects.fx.ashDrift(x, y, 12);
+      return;
+    }
+    if (kind === 'dust') {
+      this.effects.fx.dustPuff(x, y + 8, false);
+      this.effects.fx.ashDrift(x, y - 12, 4);
+      return;
+    }
+    if (kind === 'fire') {
+      this.effects.fx.explosion(x, y);
+      return;
+    }
+    if (kind === 'explosion') {
+      this.effects.buildingDestroyed(x, y, 0xff8a3d);
+      return;
+    }
+    if (kind === 'glow') {
+      this.effects.fx.glowBurst(x, y, 18);
+      this.effects.fx.magicBurst(x, y, 34);
+      this.effects.shockwave(x, y, 0xb76cff);
+      return;
+    }
     this.effects.fx.ambientMist(x, y);
+  }
+
+  private createStoryLandmarks(landmarks: StoryLandmark[]): void {
+    for (const landmark of landmarks) {
+      const objects = this.drawStoryLandmark(landmark);
+      this.storyLandmarks.set(landmark.id, objects);
+      this.setStoryLandmarkVisible(landmark.id, landmark.visible ?? true);
+    }
+  }
+
+  private drawStoryLandmark(landmark: StoryLandmark): Phaser.GameObjects.GameObject[] {
+    const objects: Phaser.GameObjects.GameObject[] = [];
+    const add = (obj: Phaser.GameObjects.GameObject): void => { objects.push(obj); };
+    const { x, y } = landmark;
+    const color = landmark.color ?? 0xffd36a;
+    const scaled = (value: number): number => value * STORY_LANDMARK_SCALE;
+
+    if (landmark.kind === 'actor') {
+      add(this.add.ellipse(x, y + scaled(16), scaled(34), scaled(12), 0x000000, 0.45).setDepth(27));
+      const kind = landmark.unitKind ?? 'footman';
+      const race = landmark.race ?? this.playerRace;
+      const key = unitSheetKey(kind, race, 'idle');
+      if (this.textures.exists(key)) {
+        const actor = this.add.sprite(x, y, key, 0).setDepth(31).setOrigin(0.5, 0.58);
+        actor.setDisplaySize(scaled(UNIT_ART_DISPLAY[kind].width), scaled(UNIT_ART_DISPLAY[kind].height));
+        actor.setData('entity', null);
+        add(actor);
+      } else {
+        add(this.add.ellipse(x, y, scaled(22), scaled(30), color, 0.85).setDepth(31));
+      }
+      add(this.storyLandmarkLabel(landmark.label, x, y - scaled(34), color));
+      return objects;
+    }
+
+    if (landmark.kind === 'burnedRoad') {
+      this.addLandmarkImage(objects, 'decal_dirt_patch', x, y + scaled(20), scaled(2.6), 0.08, 0x5a4331, 8);
+      this.addLandmarkImage(objects, 'decal_rock_pile', x - scaled(44), y + scaled(18), scaled(1.35), -0.18, 0x6f6256, 10);
+      this.addLandmarkImage(objects, 'decal_twig', x + scaled(48), y - scaled(4), scaled(2.0), 0.5, 0x2d2119, 10);
+      const caravanKey = caravanSheetKey('idle');
+      if (this.textures.exists(caravanKey)) {
+        const cart = this.add.sprite(x + scaled(8), y, caravanKey, 0).setDepth(18).setRotation(-0.2).setAlpha(0.82).setTint(0x5f4b3c);
+        cart.setDisplaySize(scaled(CARAVAN_ART_DISPLAY.width * 0.86), scaled(CARAVAN_ART_DISPLAY.height * 0.86));
+        cart.setData('entity', null);
+        add(cart);
+      }
+      add(this.storyLandmarkLabel(landmark.label, x, y - scaled(48), color));
+      return objects;
+    }
+
+    if (landmark.kind === 'chapel') {
+      const ring = this.add.graphics().setDepth(12);
+      ring.lineStyle(scaled(3), 0x8f8170, 0.86);
+      ring.strokeCircle(x, y + scaled(8), scaled(58));
+      ring.lineStyle(scaled(2), 0x2a2119, 0.55);
+      ring.lineBetween(x - scaled(54), y + scaled(8), x + scaled(54), y + scaled(8));
+      ring.lineBetween(x, y - scaled(46), x, y + scaled(62));
+      add(ring);
+      const towerKey = buildingSheetKey('tower', 'alliance');
+      if (this.textures.exists(towerKey)) {
+        const ruin = this.add.sprite(x, y - scaled(6), towerKey, getBuildingStageFrame('ruin')).setDepth(18).setAlpha(0.9).setTint(0x9c8c78);
+        ruin.setDisplaySize(scaled(BUILDING_ART_DISPLAY.tower.width * 0.78), scaled(BUILDING_ART_DISPLAY.tower.height * 0.78));
+        ruin.setData('entity', null);
+        add(ruin);
+      }
+      this.addLandmarkImage(objects, 'decal_rock_pile', x - scaled(52), y + scaled(38), scaled(1.25), -0.08, 0x80766b, 19);
+      this.addLandmarkImage(objects, 'decal_rock_pile', x + scaled(48), y + scaled(30), scaled(1.15), 0.18, 0x80766b, 19);
+      add(this.storyLandmarkLabel(landmark.label, x, y - scaled(74), color));
+      return objects;
+    }
+
+    if (landmark.kind === 'crownSeal' || landmark.kind === 'choiceObelisk') {
+      const seal = this.add.graphics().setDepth(16);
+      seal.lineStyle(scaled(3), color, landmark.kind === 'crownSeal' ? 0.78 : 0.9);
+      seal.strokeCircle(x, y, scaled(landmark.kind === 'crownSeal' ? 48 : 30));
+      seal.lineStyle(scaled(1.5), 0x170d08, 0.85);
+      seal.strokeCircle(x, y, scaled(landmark.kind === 'crownSeal' ? 34 : 20));
+      seal.lineBetween(x - scaled(24), y, x + scaled(24), y);
+      seal.lineBetween(x, y - scaled(24), x, y + scaled(24));
+      add(seal);
+      this.addLandmarkImage(objects, 'px_rune', x, y, scaled(landmark.kind === 'crownSeal' ? 1.8 : 1.25), 0, color, 17);
+      this.addLandmarkImage(objects, 'decal_rock_pile', x - scaled(24), y + scaled(28), scaled(0.9), -0.2, 0x6f6256, 18);
+      this.addLandmarkImage(objects, 'decal_rock_pile', x + scaled(28), y + scaled(24), scaled(0.75), 0.16, 0x6f6256, 18);
+      add(this.storyLandmarkLabel(landmark.label, x, y - scaled(landmark.kind === 'crownSeal' ? 58 : 42), color));
+      return objects;
+    }
+
+    add(this.storyLandmarkLabel(landmark.label, x, y - scaled(28), color));
+    return objects;
+  }
+
+  private addLandmarkImage(
+    objects: Phaser.GameObjects.GameObject[],
+    key: string,
+    x: number,
+    y: number,
+    scale: number,
+    rotation: number,
+    tint: number,
+    depth: number
+  ): void {
+    if (!this.textures.exists(key)) return;
+    const image = this.add.image(x, y, key).setScale(scale).setRotation(rotation).setTint(tint).setDepth(depth);
+    image.setData('entity', null);
+    objects.push(image);
+  }
+
+  private storyLandmarkLabel(text: string, x: number, y: number, color: number): Phaser.GameObjects.Text {
+    return this.add.text(x, y, text, {
+      fontFamily: 'serif',
+      fontSize: '12px',
+      color: hexColor(color),
+      backgroundColor: 'rgba(16, 11, 8, 0.76)',
+      padding: { x: 6, y: 3 }
+    }).setOrigin(0.5).setDepth(44).setStroke('#000000', 3);
+  }
+
+  private setStoryLandmarkVisible(id: string, visible: boolean): void {
+    const objects = this.storyLandmarks.get(id);
+    if (!objects) return;
+    for (const object of objects) {
+      if ('setVisible' in object) (object as unknown as { setVisible(value: boolean): void }).setVisible(visible);
+    }
+  }
+
+  private revealStoryArea(x: number, y: number, radiusTiles: number): void {
+    if (!this.fog) return;
+    const tile = this.map.worldToTile(x, y);
+    const existing = this.storyRevealAreas.find((area) => area.tx === tile.tx && area.ty === tile.ty);
+    if (existing) existing.radiusTiles = Math.max(existing.radiusTiles, radiusTiles);
+    else this.storyRevealAreas.push({ tx: tile.tx, ty: tile.ty, radiusTiles });
+    this.applyStoryReveals();
+    this.fog.redraw();
+    this.applyVisibility();
+  }
+
+  private applyStoryReveals(): void {
+    if (!this.fog) return;
+    for (const area of this.storyRevealAreas) {
+      this.fog.revealCircle(area.tx, area.ty, area.radiusTiles);
+    }
   }
 
   private spawnStoryCaravan(route: { x: number; y: number }[]): Caravan {
@@ -613,7 +897,176 @@ export class GameScene extends Phaser.Scene {
     return caravan;
   }
 
-  private endStoryGame(win: boolean): void {
+  private spawnStoryUnits(groupId: string, starts: StoryScriptedUnit[]): void {
+    const group = this.storyGroups.get(groupId) ?? new Set<number>();
+    this.storyGroups.set(groupId, group);
+    for (const start of starts) {
+      const race = start.race ?? (start.side === SIDE.player ? this.playerRace : this.aiRace);
+      const unit = this.spawnUnit(start.x, start.y, start.kind, start.side, race);
+      group.add(unit.id);
+      this.effects.unitSpawn(start.x, start.y, RACE_COLOR[race]);
+      unit.setVisible(this.isVisibleEntity(unit));
+    }
+  }
+
+  private commandStoryGroup(groupId: string, command: StoryGroupCommand): void {
+    const units = this.getStoryGroupUnits(groupId).filter((unit) => unit.alive);
+    if (units.length === 0) return;
+    switch (command.type) {
+      case 'move':
+        this.orderMoveGroup(units, command.x, command.y);
+        break;
+      case 'attackMove':
+        this.orderAttackMoveGroup(units.filter((unit) => unit.canAttack()), command.x, command.y);
+        break;
+      case 'attackCaravan': {
+        const caravan = this.caravans.find((candidate) => candidate.alive);
+        if (!caravan) return;
+        for (const unit of units) this.orderAttack(unit, caravan);
+        break;
+      }
+      case 'attackTownhall': {
+        const hall = this.findPlayerTownhall();
+        if (hall) this.orderAttackMoveGroup(units.filter((unit) => unit.canAttack()), hall.x, hall.y);
+        break;
+      }
+      case 'retreat':
+        this.orderMoveGroup(units, command.x, command.y);
+        if (command.despawnAfterMs !== undefined) {
+          this.time.delayedCall(command.despawnAfterMs, () => this.despawnStoryGroup(groupId));
+        }
+        break;
+      case 'despawn':
+        this.despawnStoryGroup(groupId);
+        break;
+    }
+  }
+
+  private getStoryGroupUnits(groupId: string): Unit[] {
+    const group = this.storyGroups.get(groupId);
+    if (!group) return [];
+    return this.units.filter((unit) => group.has(unit.id));
+  }
+
+  private getStoryGroupSnapshots(groupId: string): StoryUnitSnapshot[] {
+    return this.getStoryGroupUnits(groupId).map((unit) => ({
+      id: unit.id,
+      side: unit.side,
+      unitKind: unit.unitKind,
+      x: unit.x,
+      y: unit.y,
+      alive: unit.alive
+    }));
+  }
+
+  private despawnStoryGroup(groupId: string): void {
+    for (const unit of this.getStoryGroupUnits(groupId)) this.removeStoryUnitQuietly(unit);
+    this.storyGroups.delete(groupId);
+  }
+
+  private grantStoryResources(side: Side, gold = 0, lumber = 0): void {
+    if (gold) this.economy.deposit(side, 'gold', gold);
+    if (lumber) this.economy.deposit(side, 'lumber', lumber);
+    if (side !== SIDE.player) return;
+    const hall = this.findPlayerTownhall();
+    const x = hall?.x ?? this.cameras.main.midPoint.x;
+    const y = hall?.y ?? this.cameras.main.midPoint.y;
+    if (gold) this.effects.resourceText(x - 12, y - 12, `+${gold}G`, 'gold');
+    if (lumber) this.effects.resourceText(x + 12, y + 8, `+${lumber}L`, 'lumber');
+    this.audio.play('deposit', 0.55);
+  }
+
+  private retreatPlayerUnits(
+    count: number,
+    kinds: UnitKind[] | undefined,
+    x: number | undefined,
+    y: number | undefined,
+    radius: number | undefined,
+    toX: number,
+    toY: number,
+    despawnAfterMs = 4200,
+    label = 'Leaving'
+  ): void {
+    const units = this.pickPlayerUnitsForStory(count, kinds, x, y, radius);
+    for (const unit of units) {
+      unit.autopilot = false;
+      unit.autopilotAnchor = null;
+      this.effects.statusText(unit.x, unit.y - 24, label, 0xffd36a);
+      this.orderMove(unit, toX, toY);
+    }
+    if (units.length === 0) return;
+    this.time.delayedCall(despawnAfterMs, () => {
+      for (const unit of units) {
+        if (unit.alive) this.removeStoryUnitQuietly(unit);
+      }
+    });
+  }
+
+  private sacrificePlayerUnits(count: number, kinds?: UnitKind[], x?: number, y?: number, radius?: number, label?: string): void {
+    for (const unit of this.pickPlayerUnitsForStory(count, kinds, x, y, radius)) {
+      this.effects.fx.magicBurst(unit.x, unit.y - 8, 18);
+      this.effects.statusText(unit.x, unit.y - 24, label ?? 'Taken', 0xb76cff);
+      this.dealDamage(unit, unit.hp + 999, undefined, true);
+    }
+  }
+
+  private pickPlayerUnitsForStory(count: number, kinds?: UnitKind[], x?: number, y?: number, radius?: number): Unit[] {
+    return this.units
+      .filter((unit) => unit.alive && unit.side === SIDE.player)
+      .filter((unit) => !kinds || kinds.includes(unit.unitKind))
+      .filter((unit) => x === undefined || y === undefined || radius === undefined || Phaser.Math.Distance.Between(unit.x, unit.y, x, y) <= radius)
+      .sort((a, b) => {
+        const rank = unitSacrificeRank(a) - unitSacrificeRank(b);
+        if (rank !== 0) return rank;
+        if (x === undefined || y === undefined) return a.id - b.id;
+        return Phaser.Math.Distance.Between(a.x, a.y, x, y) - Phaser.Math.Distance.Between(b.x, b.y, x, y);
+      })
+      .slice(0, count);
+  }
+
+  private damageOrDestroyStoryBuilding(
+    side: Side,
+    kind?: BuildingKind,
+    damage = 0,
+    destroy = false,
+    x?: number,
+    y?: number,
+    radius?: number
+  ): void {
+    const candidates = this.buildings
+      .filter((building) => building.alive && building.side === side)
+      .filter((building) => !kind || building.buildingKind === kind)
+      .filter((building) => x === undefined || y === undefined || radius === undefined || Phaser.Math.Distance.Between(building.x, building.y, x, y) <= radius)
+      .sort((a, b) => {
+        if (x === undefined || y === undefined) return 0;
+        return Phaser.Math.Distance.Between(a.x, a.y, x, y) - Phaser.Math.Distance.Between(b.x, b.y, x, y);
+      });
+    const building = candidates[0];
+    if (!building) return;
+    const amount = destroy ? building.hp + 999 : damage;
+    if (amount <= 0) return;
+    this.dealDamage(building, amount, undefined, true);
+  }
+
+  private findPlayerTownhall(): Building | null {
+    return this.buildings.find((building) => (
+      building.alive
+      && building.side === SIDE.player
+      && building.buildingKind === 'townhall'
+    )) ?? null;
+  }
+
+  private removeStoryUnitQuietly(unit: Unit): void {
+    if (!unit.alive) return;
+    unit.alive = false;
+    unit.clearOrders();
+    unit.hb.destroy();
+    unit.sprite.destroy();
+    unit.shadow.destroy();
+    unit.weapon?.destroy();
+  }
+
+  private endStoryGame(win: boolean, storyLines: string[] = []): void {
     if (this.gameOver) return;
     this.gameOver = true;
     const color = win ? 0x44ff88 : 0xff4444;
@@ -625,7 +1078,18 @@ export class GameScene extends Phaser.Scene {
     this.tweens.timeScale = 0.35;
     window.setTimeout(() => {
       this.tweens.timeScale = 1;
-      this.game.events.emit('game-over', win);
+      const payload: GameOverPayload = {
+        win,
+        story: {
+          title: win ? 'Пепельная победа' : 'Граница пала',
+          lines: storyLines.length > 0 ? storyLines : [
+            win
+              ? 'Ратуша устояла, но пепел еще долго будет находить имена на ветру.'
+              : 'Последние огни деревни погасли раньше рассвета.'
+          ]
+        }
+      };
+      this.game.events.emit('game-over', payload);
     }, 1400);
   }
 
@@ -2071,7 +2535,8 @@ export class GameScene extends Phaser.Scene {
     if (this.debugPerf) this.recordPerfFrame(dt);
     this.repathsThisFrame = 0;
     this.updateCamera(dt);
-    this.effects.ambientViewportTick(dt, this.cameras.main.worldView);
+    this.updateStoryAtmosphereOverlay();
+    this.effects.ambientViewportTick(dt, this.cameras.main.worldView, this.storyAtmosphereTone);
     this.rebuildUnitSpatialIndex();
     runPlayerAutopilot(this);
     this.updateUnits(dt);
@@ -2857,6 +3322,7 @@ export class GameScene extends Phaser.Scene {
       const c = b.centerTile();
       this.fog.revealCircle(c.tx, c.ty, b.sight);
     }
+    this.applyStoryReveals();
     this.fog.redraw();
     this.applyVisibility();
     const elapsed = Math.max(0, (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
