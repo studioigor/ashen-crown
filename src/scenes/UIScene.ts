@@ -10,6 +10,7 @@ import { ResourceNode } from '../entities/ResourceNode';
 import { Caravan } from '../entities/Caravan';
 import { artAssetUrl } from '../assets/artManifest';
 import { GameScene, type GameOverPayload, type SkirmishSummary } from './GameScene';
+import type { StoryDialogueLine, StoryDialoguePayload, StoryObjectivePayload, StoryObjectiveView } from '../story/types';
 
 interface UIInit {
   playerSide: Side;
@@ -68,10 +69,19 @@ export class UIScene extends Phaser.Scene {
   private elGameOver = document.getElementById('game-over-screen')!;
   private elGameOverTitle = document.getElementById('game-over-title')!;
   private elGameOverSummary = document.getElementById('game-over-summary')!;
+  private elStoryObjectives = document.getElementById('story-objectives')!;
+  private elStoryObjectiveList = document.getElementById('story-objective-list')!;
+  private elStoryDialogue = document.getElementById('story-dialogue')!;
+  private elStoryDialogueSpeaker = document.getElementById('story-dialogue-speaker')!;
+  private elStoryDialogueText = document.getElementById('story-dialogue-text')!;
+  private elStoryDialogueContinue = document.getElementById('story-dialogue-continue') as HTMLButtonElement;
   private mmCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
   private mmCtx = this.mmCanvas.getContext('2d')!;
 
   private msgTimeout: any;
+  private storyDialogueQueue: StoryDialogueLine[] = [];
+  private currentStoryDialogue: StoryDialogueLine | null = null;
+  private storyDialogueTimeout: number | null = null;
 
   private onSelectionChanged = (): void => {
     this.buildMenuOpen = false;
@@ -90,6 +100,16 @@ export class UIScene extends Phaser.Scene {
     this.renderModeText();
   };
   private onEntityHover = (payload: EntityHoverPayload): void => this.showEntityTooltip(payload);
+  private onStoryObjectives = (payload: StoryObjectivePayload): void => this.renderStoryObjectives(payload.objectives);
+  private onStoryDialogue = (payload: StoryDialoguePayload): void => this.queueStoryDialogue(payload.lines);
+  private onStoryContinue = (): void => this.advanceStoryDialogue();
+  private onStoryDialogueKeydown = (ev: KeyboardEvent): void => {
+    if (!this.currentStoryDialogue) return;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    this.advanceStoryDialogue();
+  };
 
   constructor() { super('UIScene'); }
 
@@ -112,8 +132,12 @@ export class UIScene extends Phaser.Scene {
     this.game.events.on('game-over', this.onGameOver);
     this.game.events.on('ui-mode', this.onMode);
     this.game.events.on('ui-entity-hover', this.onEntityHover);
+    this.game.events.on('story-objectives', this.onStoryObjectives);
+    this.game.events.on('story-dialogue', this.onStoryDialogue);
 
     this.mmCanvas.addEventListener('mousedown', this.onMinimapClick);
+    this.elStoryDialogueContinue.addEventListener('click', this.onStoryContinue);
+    window.addEventListener('keydown', this.onStoryDialogueKeydown, true);
     this.elTooltip.style.setProperty('--tooltip-frame', `url("${artAssetUrl('assets/art/ui/tooltip_frame.png')}")`);
 
     document.getElementById('btn-restart')!.onclick = () => {
@@ -140,8 +164,15 @@ export class UIScene extends Phaser.Scene {
       this.game.events.off('game-over', this.onGameOver);
       this.game.events.off('ui-mode', this.onMode);
       this.game.events.off('ui-entity-hover', this.onEntityHover);
+      this.game.events.off('story-objectives', this.onStoryObjectives);
+      this.game.events.off('story-dialogue', this.onStoryDialogue);
       this.mmCanvas.removeEventListener('mousedown', this.onMinimapClick);
+      this.elStoryDialogueContinue.removeEventListener('click', this.onStoryContinue);
+      window.removeEventListener('keydown', this.onStoryDialogueKeydown, true);
+      this.clearStoryDialogueTimer();
       this.hideEntityTooltip();
+      this.hideStoryDialogue();
+      this.renderStoryObjectives([]);
       this.elUiLayer.style.display = 'none';
       this.elPanel.style.display = 'none';
       this.elGold.innerText = 'Золото: 0';
@@ -154,6 +185,99 @@ export class UIScene extends Phaser.Scene {
 
   private renderModeText(): void {
     this.elModeText.innerText = this.modeOverrideText || this.baseModeText;
+  }
+
+  private renderStoryObjectives(objectives: StoryObjectiveView[]): void {
+    this.elStoryObjectiveList.replaceChildren();
+    if (this.launchConfig.mode !== 'story' || objectives.length === 0) {
+      this.elStoryObjectives.classList.remove('visible');
+      this.elStoryObjectives.setAttribute('aria-hidden', 'true');
+      return;
+    }
+
+    for (const objective of objectives) {
+      const item = document.createElement('div');
+      item.className = `story-objective ${objective.status}`;
+
+      const state = document.createElement('span');
+      state.className = `story-objective-state ${objective.status}`;
+      state.textContent = objective.status === 'completed' ? 'DONE' : objective.status === 'failed' ? 'FAIL' : 'NOW';
+
+      const copy = document.createElement('div');
+      copy.className = 'story-objective-copy';
+
+      const title = document.createElement('div');
+      title.className = 'story-objective-title';
+      title.textContent = objective.optional ? `${objective.title} (Optional)` : objective.title;
+      copy.appendChild(title);
+
+      if (objective.description) {
+        const description = document.createElement('div');
+        description.className = 'story-objective-description';
+        description.textContent = objective.description;
+        copy.appendChild(description);
+      }
+
+      if (objective.subObjectives.length > 0) {
+        const subList = document.createElement('div');
+        subList.className = 'story-subobjective-list';
+        for (const sub of objective.subObjectives) {
+          const subEl = document.createElement('div');
+          subEl.className = `story-subobjective ${sub.status}`;
+          subEl.textContent = sub.title;
+          subList.appendChild(subEl);
+        }
+        copy.appendChild(subList);
+      }
+
+      item.append(state, copy);
+      this.elStoryObjectiveList.appendChild(item);
+    }
+
+    this.elStoryObjectives.classList.add('visible');
+    this.elStoryObjectives.setAttribute('aria-hidden', 'false');
+  }
+
+  private queueStoryDialogue(lines: StoryDialogueLine[]): void {
+    if (this.launchConfig.mode !== 'story' || lines.length === 0) return;
+    this.storyDialogueQueue.push(...lines);
+    if (!this.currentStoryDialogue) this.showNextStoryDialogue();
+  }
+
+  private showNextStoryDialogue(): void {
+    this.clearStoryDialogueTimer();
+    const next = this.storyDialogueQueue.shift() ?? null;
+    this.currentStoryDialogue = next;
+    if (!next) {
+      this.hideStoryDialogue();
+      return;
+    }
+
+    this.elStoryDialogueSpeaker.textContent = next.speaker;
+    this.elStoryDialogueText.textContent = next.text;
+    this.elStoryDialogue.classList.add('visible');
+    this.elStoryDialogue.setAttribute('aria-hidden', 'false');
+
+    const fallbackMs = next.durationMs ?? (next.requireContinue ? 12000 : 7500);
+    this.storyDialogueTimeout = window.setTimeout(() => this.advanceStoryDialogue(), fallbackMs);
+  }
+
+  private advanceStoryDialogue(): void {
+    if (!this.currentStoryDialogue) return;
+    this.showNextStoryDialogue();
+  }
+
+  private hideStoryDialogue(): void {
+    this.currentStoryDialogue = null;
+    this.storyDialogueQueue = [];
+    this.elStoryDialogue.classList.remove('visible');
+    this.elStoryDialogue.setAttribute('aria-hidden', 'true');
+  }
+
+  private clearStoryDialogueTimer(): void {
+    if (this.storyDialogueTimeout === null) return;
+    window.clearTimeout(this.storyDialogueTimeout);
+    this.storyDialogueTimeout = null;
   }
 
   private onMinimapClick = (e: MouseEvent): void => {
@@ -260,14 +384,15 @@ export class UIScene extends Phaser.Scene {
   }
 
   private computeSignature(): string {
+    const storyRestrictions = this.game_.getStoryRestrictionSignature();
     const sb = this.game_.selectedBuilding;
-    if (sb) return `b:${sb.buildingKind}:${sb.completed ? 1 : 0}`;
+    if (sb) return `b:${sb.buildingKind}:${sb.completed ? 1 : 0}:${storyRestrictions}`;
     const sel = this.game_.selected;
     if (sel.length === 0) return '';
     const hasWorker = sel.some(u => u.isWorker()) ? 1 : 0;
     const autopilotCount = sel.filter(u => u.autopilot).length;
     const autopilotAllowed = this.game_.isAutopilotAllowed() ? 1 : 0;
-    return `u:${sel.length}:${hasWorker}:${autopilotCount}:${autopilotAllowed}`;
+    return `u:${sel.length}:${hasWorker}:${autopilotCount}:${autopilotAllowed}:${storyRestrictions}`;
   }
 
   private refreshPanelText(): void {
@@ -352,7 +477,15 @@ export class UIScene extends Phaser.Scene {
       const def = UNIT[kind];
       const label = `Нанять ${labelForUnit(kind, b.race)}`;
       const tooltip = `${def.food} лимит, ${Math.round(def.build/1000)}с\nЦена: ${def.cost.gold} зол., ${def.cost.lumber} дер.`;
-      this.addButton(label, tooltip, () => this.game.events.emit('ui-train', kind), `<span class="cost">${def.cost.gold} зол.  ${def.cost.lumber} дер.</span>`, kind);
+      this.addButton(
+        label,
+        tooltip,
+        () => this.game.events.emit('ui-train', kind),
+        `<span class="cost">${def.cost.gold} зол.  ${def.cost.lumber} дер.</span>`,
+        kind,
+        false,
+        this.game_.getStoryTrainLock(kind)
+      );
     }
   }
 
@@ -375,18 +508,36 @@ export class UIScene extends Phaser.Scene {
         this.game.events.emit('ui-build', kind);
         this.buildMenuOpen = false;
         this.renderCommandPanel();
-      }, `<span class="cost">${def.cost.gold} зол. ${def.cost.lumber} дер. ${foodAdd}</span>`, 'build');
+      }, `<span class="cost">${def.cost.gold} зол. ${def.cost.lumber} дер. ${foodAdd}</span>`, 'build', false, this.game_.getStoryBuildLock(kind));
     });
   }
 
-  private addButton(label: string, tooltip: string, onClick: () => void, extraHtml = '', icon?: string, active = false): void {
+  private addButton(
+    label: string,
+    tooltip: string,
+    onClick: () => void,
+    extraHtml = '',
+    icon?: string,
+    active = false,
+    disabledReason: string | null = null
+  ): void {
     const btn = document.createElement('button');
     btn.className = active ? 'cmd-btn active' : 'cmd-btn';
     if (active) btn.setAttribute('aria-pressed', 'true');
+    if (disabledReason) {
+      btn.classList.add('locked');
+      btn.setAttribute('aria-disabled', 'true');
+    }
     const iconHtml = icon ? `<img class="cmd-icon" src="${this.iconUrl(icon)}" alt="" draggable="false">` : '';
     btn.innerHTML = `${iconHtml}<span class="cmd-copy"><span class="cmd-label">${escapeHtml(label)}</span>${extraHtml}</span>`;
-    btn.onclick = onClick;
-    btn.onmouseenter = () => { this.elModeText.innerText = tooltip; };
+    btn.onclick = () => {
+      if (disabledReason) {
+        this.showMessage(disabledReason);
+        return;
+      }
+      onClick();
+    };
+    btn.onmouseenter = () => { this.elModeText.innerText = disabledReason ?? tooltip; };
     btn.onmouseleave = () => { this.renderModeText(); };
     this.elActions.appendChild(btn);
   }

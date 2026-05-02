@@ -23,6 +23,9 @@ import { AudioSystem } from '../systems/AudioSystem';
 import { formationSlots } from '../systems/Formation';
 import { SpatialIndex } from '../systems/SpatialIndex';
 import { nearestReachableWalkable } from '../world/MapValidation';
+import { StoryController } from '../story/StoryController';
+import { createStoryMap } from '../story/storyMap';
+import type { StoryCameraBeat, StoryControllerGameApi, StoryMapDefinition, StoryRuntimeEvent } from '../story/types';
 import {
   BUILDING_ART_DISPLAY,
   artAssetUrl,
@@ -198,6 +201,9 @@ export class GameScene extends Phaser.Scene {
   private unitSpatialReady = false;
   private unitQueryScratch: Unit[] = [];
   private skirmishStats: SkirmishStats = freshSkirmishStats();
+  private storyMapDefinition: StoryMapDefinition | null = null;
+  private storyController: StoryController | null = null;
+  private storyControlLockUntilMs = 0;
 
   private onUiBuild = (kind: BuildingKind): void => this.beginPlacement(kind);
   private onUiTrain = (kind: UnitKind): void => this.requestTrain(kind);
@@ -250,6 +256,9 @@ export class GameScene extends Phaser.Scene {
     this.fogLastMs = 0;
     this.fogAvgMs = 0;
     this.unitSpatialReady = false;
+    this.storyMapDefinition = null;
+    this.storyController = null;
+    this.storyControlLockUntilMs = 0;
     this.nextGroupMoveId = 1;
     this.repathsThisFrame = 0;
     this.skirmishStats = freshSkirmishStats();
@@ -290,11 +299,14 @@ export class GameScene extends Phaser.Scene {
     this.debugPathfinding = this.requestedDebugPathfinding || this.isDebugPathfindingEnabled();
     this.debugPerf = !this.debugPathfinding && (this.requestedDebugPerf || this.isDebugPerfEnabled());
     this.debugPerfSize = this.requestedPerfSize ?? this.getDebugPerfSizeFromQuery();
+    this.storyMapDefinition = this.mode === 'story' && !this.debugPathfinding && !this.debugPerf && this.storyMapId
+      ? createStoryMap(this.storyMapId, this.seed)
+      : null;
     this.layout = this.debugPathfinding
       ? this.createDebugPathfindingLayout()
       : this.debugPerf
         ? this.createDebugPerfLayout()
-        : generateMap(this.seed);
+        : this.storyMapDefinition?.layout ?? generateMap(this.seed);
     this.map = this.layout.map;
 
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -305,13 +317,34 @@ export class GameScene extends Phaser.Scene {
 
     const start = SKIRMISH_CONFIG.start;
     const debugCap = this.debugPathfinding || this.debugPerf ? 1000 : 0;
-    this.economy.register(SIDE.player, this.playerRace, start.gold, start.lumber, debugCap);
-    this.economy.register(SIDE.ai, this.aiRace, start.gold, start.lumber, debugCap);
+    if (this.storyMapDefinition) {
+      this.economy.register(
+        SIDE.player,
+        this.playerRace,
+        this.storyMapDefinition.playerEconomy.gold,
+        this.storyMapDefinition.playerEconomy.lumber,
+        this.storyMapDefinition.playerEconomy.foodCap ?? 0
+      );
+      this.economy.register(
+        SIDE.ai,
+        this.aiRace,
+        this.storyMapDefinition.aiEconomy.gold,
+        this.storyMapDefinition.aiEconomy.lumber,
+        this.storyMapDefinition.aiEconomy.foodCap ?? 0
+      );
+    } else {
+      this.economy.register(SIDE.player, this.playerRace, start.gold, start.lumber, debugCap);
+      this.economy.register(SIDE.ai, this.aiRace, start.gold, start.lumber, debugCap);
+    }
     this.skirmishStats.startedAtMs = this.time.now;
 
     this.drawTiles();
     if (this.debugPathfinding) this.spawnDebugPathfindingScenario();
     else if (this.debugPerf) this.spawnDebugPerfScenario(this.debugPerfSize);
+    else if (this.storyMapDefinition) {
+      this.spawnStoryInitial(this.storyMapDefinition);
+      this.centerOnTownhall();
+    }
     else {
       this.spawnInitial();
       this.centerOnTownhall();
@@ -336,7 +369,10 @@ export class GameScene extends Phaser.Scene {
 
     this.setupInput();
 
+    if (this.storyMapDefinition) this.storyController = new StoryController(this.storyMapDefinition, this.createStoryControllerApi());
+
     this.scene.launch('UIScene', { playerSide: SIDE.player, launchConfig: this.launchConfig });
+    if (this.storyController) this.time.delayedCall(0, () => this.storyController?.start(this.time.now));
     if (this.debugPathfinding) this.startDebugPathfindingCommand();
 
     // Ambient audio starts once user has interacted (audioctx resumes on first sound)
@@ -468,6 +504,129 @@ export class GameScene extends Phaser.Scene {
       this.resources.push(node);
     }
     for (const t of this.layout.trees) this.resources.push(new ResourceNode(this, t.tx, t.ty, 'lumber'));
+  }
+
+  private spawnStoryInitial(definition: StoryMapDefinition): void {
+    for (const start of definition.startingBuildings) {
+      this.spawnBuilding(
+        start.tx,
+        start.ty,
+        start.kind,
+        start.side,
+        start.race ?? (start.side === SIDE.player ? this.playerRace : this.aiRace),
+        start.instant ?? false
+      );
+    }
+    for (const start of definition.startingUnits) {
+      this.spawnUnit(
+        start.x,
+        start.y,
+        start.kind,
+        start.side,
+        start.race ?? (start.side === SIDE.player ? this.playerRace : this.aiRace)
+      );
+    }
+    for (const start of definition.startingResources) {
+      const node = new ResourceNode(this, start.tx, start.ty, start.type);
+      if (start.type === 'gold') {
+        for (let dy = 0; dy < node.tileH; dy++) {
+          for (let dx = 0; dx < node.tileW; dx++) this.map.setWalkable(start.tx + dx, start.ty + dy, false);
+        }
+      }
+      this.resources.push(node);
+    }
+  }
+
+  private createStoryControllerApi(): StoryControllerGameApi {
+    return {
+      getUnits: () => this.units.map((unit) => ({
+        id: unit.id,
+        side: unit.side,
+        unitKind: unit.unitKind,
+        x: unit.x,
+        y: unit.y,
+        alive: unit.alive
+      })),
+      getBuildings: () => this.buildings.map((building) => ({
+        id: building.id,
+        side: building.side,
+        buildingKind: building.buildingKind,
+        completed: building.completed,
+        alive: building.alive
+      })),
+      emitObjectives: (payload) => this.game.events.emit('story-objectives', payload),
+      emitDialogue: (payload) => this.game.events.emit('story-dialogue', payload),
+      focusCamera: (beat) => this.focusStoryCamera(beat),
+      showMessage: (text) => this.flashMessage(text),
+      playFx: (kind, x, y, label) => this.playStoryFx(kind, x, y, label),
+      spawnCaravan: (route) => this.spawnStoryCaravan(route),
+      endGame: (win) => this.endStoryGame(win)
+    };
+  }
+
+  private emitStoryEvent(event: StoryRuntimeEvent): void {
+    this.storyController?.handle(event, this.time.now);
+  }
+
+  private focusStoryCamera(beat: StoryCameraBeat): void {
+    const cam = this.cameras.main;
+    const zoom = cam.zoom || 1;
+    const viewW = cam.width / zoom;
+    const viewH = cam.height / zoom;
+    const scrollX = Phaser.Math.Clamp(beat.x - viewW / 2, 0, Math.max(0, WORLD_W - viewW));
+    const scrollY = Phaser.Math.Clamp(beat.y - viewH / 2, 0, Math.max(0, WORLD_H - viewH));
+    this.storyControlLockUntilMs = Math.max(this.storyControlLockUntilMs, this.time.now + (beat.lockMs ?? beat.durationMs ?? 600));
+    this.cameraVel.x = 0;
+    this.cameraVel.y = 0;
+    this.tweens.add({
+      targets: cam,
+      scrollX,
+      scrollY,
+      duration: beat.durationMs ?? 600,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  private playStoryFx(kind: 'marker' | 'smoke' | 'embers' | 'mist', x: number, y: number, label?: string): void {
+    if (kind === 'marker') {
+      this.effects.commandMarker(x, y, 0xffd36a, 'rally', label);
+      return;
+    }
+    if (kind === 'smoke') {
+      const emitter = this.effects.fx.continuousSmoke(x, y, true);
+      this.time.delayedCall(4200, () => emitter.stop());
+      this.effects.fx.dustPuff(x, y + 8, true);
+      return;
+    }
+    if (kind === 'embers') {
+      this.effects.fx.emberBurst(x, y, 18);
+      return;
+    }
+    this.effects.fx.ambientMist(x, y);
+  }
+
+  private spawnStoryCaravan(route: { x: number; y: number }[]): Caravan {
+    const caravan = new Caravan(this, route);
+    this.caravans.push(caravan);
+    this.effects.fx.dustPuff(caravan.x, caravan.y + caravan.radius * 0.45, true);
+    caravan.setVisible(this.isVisibleEntity(caravan));
+    return caravan;
+  }
+
+  private endStoryGame(win: boolean): void {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    const color = win ? 0x44ff88 : 0xff4444;
+    const mid = this.cameras.main.midPoint;
+    this.effects.shockwave(mid.x, mid.y, color);
+    this.cameras.main.flash(500, (color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff);
+    this.cameras.main.shake(700, 0.012);
+    this.audio.play(win ? 'victory' : 'defeat', 1);
+    this.tweens.timeScale = 0.35;
+    window.setTimeout(() => {
+      this.tweens.timeScale = 1;
+      this.game.events.emit('game-over', win);
+    }, 1400);
   }
 
   private isDebugCaravansEnabled(): boolean {
@@ -748,6 +907,7 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (this.isOverUi(p)) return;
+      if (this.isStoryControlLocked()) return;
       if (p.middleButtonDown()) {
         this.panStart = { x: p.x, y: p.y, sx: this.cameras.main.scrollX, sy: this.cameras.main.scrollY };
         return;
@@ -830,7 +990,7 @@ export class GameScene extends Phaser.Scene {
 
   private isClientOverUi(x: number, y: number): boolean {
     const el = document.elementFromPoint(x, y);
-    return !!el?.closest('#top-bar, #bottom-panel, #minimap-border, #game-over-screen.visible, #menu-layer.visible, #pause-screen.visible, #menu-debug-panel.visible');
+    return !!el?.closest('#top-bar, #bottom-panel, #story-objectives.visible, #story-dialogue.visible, #minimap-border, #game-over-screen.visible, #menu-layer.visible, #pause-screen.visible, #menu-debug-panel.visible');
   }
 
   private pointerClientPosition(p: Phaser.Input.Pointer): { x: number; y: number } {
@@ -1172,6 +1332,18 @@ export class GameScene extends Phaser.Scene {
 
   isAutopilotAllowed(): boolean {
     return true;
+  }
+
+  getStoryBuildLock(kind: BuildingKind): string | null {
+    return this.storyController?.buildRestrictionReason(kind) ?? null;
+  }
+
+  getStoryTrainLock(kind: UnitKind): string | null {
+    return this.storyController?.trainRestrictionReason(kind) ?? null;
+  }
+
+  getStoryRestrictionSignature(): string {
+    return this.storyController?.getState().phase ?? '';
   }
 
   toggleAutopilotForSelection(): void {
@@ -1778,6 +1950,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   beginPlacement(kind: BuildingKind): void {
+    const storyLock = this.getStoryBuildLock(kind);
+    if (storyLock) {
+      this.flashMessage(storyLock);
+      this.audio.play('error');
+      return;
+    }
     if (!this.economy.canAfford(SIDE.player, BUILDING[kind].cost.gold, BUILDING[kind].cost.lumber)) {
       this.flashMessage('Недостаточно ресурсов');
       this.audio.play('error');
@@ -1857,6 +2035,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   requestTrain(kind: UnitKind): void {
+    const storyLock = this.getStoryTrainLock(kind);
+    if (storyLock) {
+      this.flashMessage(storyLock);
+      this.audio.play('error');
+      return;
+    }
     const b = this.selectedBuilding;
     if (!b || b.side !== SIDE.player || !b.completed) return;
     const producer = UNIT[kind].producer as BuildingKind;
@@ -1907,6 +2091,7 @@ export class GameScene extends Phaser.Scene {
       runAI(this, this.aiState, this.difficulty);
       this.lastAITickMs = 0;
     }
+    this.storyController?.update(this.time.now, dt);
     if (this.debugPathfinding) this.updateDebugPathfinding();
     if (this.debugPerf) this.updateDebugPerf(fogUpdateMs);
     else if (!this.debugPathfinding) this.checkVictory();
@@ -2016,6 +2201,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCamera(dt: number): void {
+    if (this.isStoryControlLocked()) {
+      this.cameraVel.x = 0;
+      this.cameraVel.y = 0;
+      return;
+    }
     const cam = this.cameras.main;
     const zoom = cam.zoom || 1;
     const speed = (CAMERA_SPEED * dt) / 1000 / zoom;
@@ -2043,6 +2233,10 @@ export class GameScene extends Phaser.Scene {
     const viewH = cam.height / zoom;
     cam.scrollX = Phaser.Math.Clamp(cam.scrollX + this.cameraVel.x, 0, Math.max(0, WORLD_W - viewW));
     cam.scrollY = Phaser.Math.Clamp(cam.scrollY + this.cameraVel.y, 0, Math.max(0, WORLD_H - viewH));
+  }
+
+  private isStoryControlLocked(): boolean {
+    return this.time.now < this.storyControlLockUntilMs;
   }
 
   private updateUnits(dt: number): void {
@@ -2190,6 +2384,7 @@ export class GameScene extends Phaser.Scene {
     const cargo = u.cargo;
     const deposited = Math.round(cargo.amount * (u.side === SIDE.ai ? DIFFICULTY[this.difficulty].incomeBias : 1));
     this.economy.deposit(u.side, cargo.type, deposited);
+    this.emitStoryEvent({ type: 'resourceGathered', side: u.side, resourceType: cargo.type, amount: cargo.amount });
     if (this.mode === 'skirmish' && u.side === SIDE.player) this.skirmishStats.resourcesGathered[cargo.type] += cargo.amount;
     if (u.side === SIDE.player) {
       this.effects.resourceText(hall.x, hall.y, `+${cargo.amount} ${cargo.type === 'gold' ? 'G' : 'L'}`, cargo.type);
@@ -2227,6 +2422,7 @@ export class GameScene extends Phaser.Scene {
       const def = BUILDING[site.buildingKind];
       if (site.buildingKind === 'townhall' || site.buildingKind === 'farm') this.economy.addCap(site.side, def.food);
       this.effects.buildingComplete(site.x, site.y, RACE_COLOR[site.race]);
+      this.emitStoryEvent({ type: 'buildingCompleted', buildingId: site.id, buildingKind: site.buildingKind, side: site.side });
       if (site.side === SIDE.player) this.audio.play('build');
       u.state = 'idle'; u.targetBuilding = null;
     }
@@ -2372,7 +2568,11 @@ export class GameScene extends Phaser.Scene {
 
   private updateCaravans(dt: number): void {
     for (const caravan of this.caravans) {
-      if (caravan.alive) caravan.update(dt);
+      if (!caravan.alive) continue;
+      caravan.update(dt);
+      if (!caravan.alive && caravan.routeComplete) {
+        this.emitStoryEvent({ type: 'caravanResolved', caravanId: caravan.id, outcome: 'escaped' });
+      }
     }
     if (this.time.now < this.caravanNextSpawnMs) return;
     if (this.caravans.filter(c => c.alive).length >= CARAVAN_CONFIG.maxActive) return;
@@ -2480,6 +2680,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const u = this.spawnUnit(spawnPos.x, spawnPos.y, produced, b.side, b.race);
+    this.emitStoryEvent({ type: 'unitTrained', unitId: u.id, unitKind: produced, side: b.side });
     this.effects.unitSpawn(spawnPos.x, spawnPos.y, RACE_COLOR[b.race]);
     if (b.side === SIDE.player) this.audio.play('train');
     if (b.rally) this.orderMove(u, b.rally.x, b.rally.y);
@@ -2578,6 +2779,21 @@ export class GameScene extends Phaser.Scene {
       if (this.mode === 'skirmish' && target.kind === 'unit') {
         if (target.side === SIDE.player) this.skirmishStats.unitsLost++;
         else if (target.side === SIDE.ai && from?.side === SIDE.player) this.skirmishStats.unitsKilled++;
+      }
+      if (target.kind === 'unit') {
+        const unit = target as Unit;
+        this.emitStoryEvent({ type: 'unitKilled', unitId: unit.id, unitKind: unit.unitKind, side: unit.side, bySide: from?.side });
+      } else if (target.kind === 'building') {
+        const building = target as Building;
+        this.emitStoryEvent({
+          type: 'buildingDestroyed',
+          buildingId: building.id,
+          buildingKind: building.buildingKind,
+          side: building.side,
+          bySide: from?.side
+        });
+      } else if (target.kind === 'caravan') {
+        this.emitStoryEvent({ type: 'caravanResolved', caravanId: target.id, outcome: 'destroyed', bySide: from?.side });
       }
       if (wasCaravan) this.grantCaravanLoot(target as Caravan, from, show);
       if (show) {
