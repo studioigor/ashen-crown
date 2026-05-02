@@ -147,6 +147,7 @@ export const RACE_LABEL: Record<Race, string> = {
 };
 
 export const CAMERA_SPEED = 760;
+export const CAMERA_ZOOM = 1.5;
 export const EDGE_SCROLL_PX = 18;
 
 export const VISUALS = {

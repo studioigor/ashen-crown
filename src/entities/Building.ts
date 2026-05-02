@@ -100,14 +100,14 @@ export class Building implements IEntity {
     this.productionGlow = scene.add.graphics();
     this.productionGlow.setDepth(19);
 
-    this.hb = new HealthBar(scene, this, this.sizeTiles * TILE * 0.8);
+    this.hb = new HealthBar(scene, this, Math.max(this.sizeTiles * TILE * 0.8, this.sprite.displayWidth * 0.64));
     this.updateDepths();
 
     // Start construction dust emitter if under construction
     if (!instant) {
       const anyScene = scene as any;
       if (anyScene.effects?.fx?.continuousSmoke) {
-        this.constructionDust = anyScene.effects.fx.continuousSmoke(cx, cy + this.radius - 8, false);
+        this.constructionDust = anyScene.effects.fx.continuousSmoke(cx, cy + this.visualRadius * 0.55, false);
       }
     } else {
       this.maybeStartChimney();
@@ -188,10 +188,11 @@ export class Building implements IEntity {
     const anyScene = this.sprite.scene as any;
     if (!anyScene.effects?.fx?.continuousSmoke) return;
     // Chimney location per building kind (offset relative to center)
-    let ox = 0, oy = -this.radius + 6;
-    if (this.buildingKind === 'workshop') { ox = this.radius - 18; oy = -this.radius + 4; }
-    else if (this.buildingKind === 'townhall') { ox = -this.radius + 22; oy = -this.radius + 8; }
-    else if (this.buildingKind === 'barracks') { ox = -this.radius + 16; oy = -this.radius + 10; }
+    const r = this.visualRadius;
+    let ox = 0, oy = -r + 10;
+    if (this.buildingKind === 'workshop') { ox = r - 28; oy = -r + 8; }
+    else if (this.buildingKind === 'townhall') { ox = -r + 34; oy = -r + 12; }
+    else if (this.buildingKind === 'barracks') { ox = -r + 24; oy = -r + 14; }
     this.chimneySmoke = anyScene.effects.fx.continuousSmoke(this.sprite.x + ox, this.sprite.y + oy, false);
   }
 
@@ -199,8 +200,9 @@ export class Building implements IEntity {
     this.flag.clear();
     if (!this.completed) return;
     const color = RACE_COLOR[this.race];
-    const x = this.sprite.x + this.radius - 6;
-    const y = this.sprite.y - this.radius + 2;
+    const r = this.visualRadius;
+    const x = this.sprite.x + r - 9;
+    const y = this.sprite.y - r + 6;
     // Pole
     this.flag.lineStyle(1.5, 0x1a1410, 1);
     this.flag.beginPath();
@@ -233,6 +235,7 @@ export class Building implements IEntity {
 
   get x(): number { return this.sprite.x; }
   get y(): number { return this.sprite.y; }
+  get visualRadius(): number { return Math.max(this.sprite.displayWidth, this.sprite.displayHeight) / 2; }
 
   setVisible(v: boolean): void {
     this.sprite.setVisible(v);
@@ -364,7 +367,7 @@ export class Building implements IEntity {
     scene.tweens.add({
       targets: this.sprite,
       scaleY: { from: 1, to: 0.25 },
-      y: this.sprite.y + this.radius * 0.4,
+      y: this.sprite.y + this.visualRadius * 0.35,
       alpha: { from: 1, to: 0 },
       duration: 520,
       ease: 'Cubic.easeIn',
@@ -376,7 +379,7 @@ export class Building implements IEntity {
     scene.tweens.add({
       targets: this.damageOverlay,
       alpha: { to: 0 },
-      y: this.damageOverlay.y + this.radius * 0.4,
+      y: this.damageOverlay.y + this.visualRadius * 0.35,
       scaleY: 0.25,
       duration: 520,
       ease: 'Cubic.easeIn'
@@ -412,9 +415,10 @@ export class Building implements IEntity {
         const frac = this.progressFraction();
         const pulse = 0.5 + Math.sin(now / 220) * 0.3;
         this.productionGlow.fillStyle(RACE_COLOR[this.race], 0.16 * pulse);
-        this.productionGlow.fillCircle(this.sprite.x, this.sprite.y, this.radius * (0.8 + frac * 0.25));
+        const r = this.visualRadius;
+        this.productionGlow.fillCircle(this.sprite.x, this.sprite.y, r * (0.76 + frac * 0.22));
         this.productionGlow.lineStyle(2, RACE_COLOR[this.race], 0.45 * pulse);
-        this.productionGlow.strokeCircle(this.sprite.x, this.sprite.y, this.radius + 4);
+        this.productionGlow.strokeCircle(this.sprite.x, this.sprite.y, r + 4);
         this.glowActive = true;
       }
     } else if (this.glowActive) {

@@ -93,12 +93,21 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private start(config: GameLaunchConfig): void {
-    this.scene.start('GameScene', config);
+    const seed = this.seedFromQuery();
+    this.scene.start('GameScene', seed === undefined ? config : { ...config, seed });
   }
 
   private isDebugPathfindingEnabled(): boolean {
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('debugPathfinding') === '1';
+  }
+
+  private seedFromQuery(): number | undefined {
+    if (typeof window === 'undefined') return undefined;
+    const raw = new URLSearchParams(window.location.search).get('seed');
+    if (!raw) return undefined;
+    const seed = Number(raw);
+    return Number.isFinite(seed) ? Math.floor(seed) : undefined;
   }
 
   private applyArtBackground(): void {

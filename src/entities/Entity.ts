@@ -15,6 +15,7 @@ export interface IEntity {
   x: number;
   y: number;
   radius: number;
+  visualRadius?: number;
   destroy(): void;
   takeDamage(amount: number, from?: IEntity): void;
 }
@@ -86,7 +87,7 @@ export class HealthBar {
 
     const now = this.scene.time.now;
     const x = this.owner.x - this.widthPx / 2;
-    const y = this.owner.y - this.owner.radius - 12;
+    const y = this.owner.y - (this.owner.visualRadius ?? this.owner.radius) - 12;
     const moved = Math.abs(x - this.lastDrawX) + Math.abs(y - this.lastDrawY) > 1.5;
     const hpChanged = Math.abs(this.owner.hp - this.lastDrawHp) >= 0.5;
     if (!force && !moved && !hpChanged && now - this.lastDrawAt < 100) {

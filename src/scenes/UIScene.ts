@@ -570,10 +570,11 @@ export class UIScene extends Phaser.Scene {
 
     // View rect
     const cam = this.game_.cameras.main;
-    const vx = (cam.scrollX / WORLD_W) * w;
-    const vy = (cam.scrollY / WORLD_H) * h;
-    const vw = (cam.width / WORLD_W) * w;
-    const vh = (cam.height / WORLD_H) * h;
+    const view = cam.worldView;
+    const vx = (view.x / WORLD_W) * w;
+    const vy = (view.y / WORLD_H) * h;
+    const vw = (view.width / WORLD_W) * w;
+    const vh = (view.height / WORLD_H) * h;
     
     this.mmCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
     this.mmCtx.lineWidth = 1;

@@ -102,11 +102,11 @@ export const CARAVAN_ART_DISPLAY: DisplaySize = { width: 96, height: 64 };
 export const CARAVAN_ART_FRAME: DisplaySize = { width: 192, height: 128 };
 
 export const BUILDING_ART_DISPLAY: Record<BuildingKind, DisplaySize> = {
-  townhall: { width: 96, height: 96 },
-  farm: { width: 64, height: 64 },
-  barracks: { width: 96, height: 96 },
-  workshop: { width: 96, height: 96 },
-  tower: { width: 64, height: 64 }
+  townhall: { width: 144, height: 144 },
+  farm: { width: 96, height: 96 },
+  barracks: { width: 144, height: 144 },
+  workshop: { width: 144, height: 144 },
+  tower: { width: 128, height: 128 }
 };
 
 export const BUILDING_ART_FRAME: Record<BuildingKind, DisplaySize> = {

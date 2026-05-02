@@ -19,10 +19,22 @@ export interface MapLayout {
   decals: MapDecal[];
 }
 
+interface MapProfile {
+  forestClusters: number;
+  forestMinRadius: number;
+  forestMaxRadius: number;
+  mainLaneRadius: number;
+  sideLaneRadius: number;
+  stonePatches: number;
+  pondPairs: number;
+  decalDensity: number;
+}
+
 export function generateMap(seed = 42): MapLayout {
   const rng = mulberry32(seed);
+  const profile = createMapProfile(rng);
   const map = new TileMap();
-  const playerBase = { tx: 9, ty: 10 };
+  const playerBase = { tx: 19, ty: 12 };
   const aiBase = mirror(playerBase);
   const center = { tx: Math.floor(MAP_W / 2), ty: Math.floor(MAP_H / 2) };
 
@@ -32,16 +44,16 @@ export function generateMap(seed = 42): MapLayout {
     }
   }
 
-  addDecorativeWater(rng, map);
-  scatterStone(rng, 7, map);
-  clusterForestMirrored(rng, 12, 4, map);
+  addDecorativeWater(rng, map, profile);
+  scatterStone(rng, profile.stonePatches, map);
+  clusterForestMirrored(rng, profile.forestClusters, profile.forestMinRadius, profile.forestMaxRadius, map);
 
-  carveLane(map, playerBase, center, 4);
-  carveLane(map, center, aiBase, 4);
-  carveLane(map, { tx: 10, ty: MAP_H - 13 }, { tx: MAP_W - 12, ty: 12 }, 3);
-  clearArea(map, playerBase.tx, playerBase.ty, 8);
-  clearArea(map, aiBase.tx, aiBase.ty, 8);
-  clearArea(map, center.tx, center.ty, 6);
+  carveLane(map, playerBase, center, profile.mainLaneRadius);
+  carveLane(map, center, aiBase, profile.mainLaneRadius);
+  carveLane(map, { tx: 10, ty: MAP_H - 13 }, { tx: MAP_W - 12, ty: 12 }, profile.sideLaneRadius);
+  clearArea(map, playerBase.tx, playerBase.ty, 9);
+  clearArea(map, aiBase.tx, aiBase.ty, 9);
+  clearArea(map, center.tx, center.ty, 7);
 
   const goldMines = mirroredPoints([
     { tx: playerBase.tx + 7, ty: playerBase.ty + 1 },
@@ -49,7 +61,7 @@ export function generateMap(seed = 42): MapLayout {
     { tx: center.tx - 4, ty: center.ty - 5 }
   ]);
   goldMines.push({ tx: center.tx + 2, ty: center.ty + 3 });
-  for (const m of goldMines) clearArea(map, m.tx, m.ty, 4);
+  for (const m of goldMines) clearArea(map, m.tx, m.ty, 5);
 
   if (!hasWalkablePath(map, playerBase, aiBase)) {
     carveLane(map, playerBase, center, 5);
@@ -57,11 +69,26 @@ export function generateMap(seed = 42): MapLayout {
   }
 
   const trees = materializeTrees(map, playerBase, aiBase, goldMines);
-  const decals = scatterDecals(rng, map);
+  const decals = scatterDecals(rng, map, profile.decalDensity);
   return { map, playerBase, aiBase, goldMines, trees, decals };
 }
 
-function scatterDecals(rng: () => number, map: TileMap): MapDecal[] {
+function createMapProfile(rng: () => number): MapProfile {
+  const forestRoll = rng();
+  const waterRoll = rng();
+  return {
+    forestClusters: 9 + Math.floor(forestRoll * 8),
+    forestMinRadius: forestRoll > 0.62 ? 3 : 2,
+    forestMaxRadius: forestRoll > 0.34 ? 5 : 4,
+    mainLaneRadius: 4 + (rng() > 0.72 ? 1 : 0),
+    sideLaneRadius: 3 + (rng() > 0.6 ? 1 : 0),
+    stonePatches: 5 + Math.floor(rng() * 6),
+    pondPairs: waterRoll > 0.72 ? 3 : waterRoll > 0.26 ? 2 : 1,
+    decalDensity: 0.75 + rng() * 0.75
+  };
+}
+
+function scatterDecals(rng: () => number, map: TileMap, density = 1): MapDecal[] {
   const decals: MapDecal[] = [];
   const flowerKeys = ['decal_flower_0', 'decal_flower_1', 'decal_flower_2', 'decal_flower_3', 'decal_flower_4'];
   const pebbleKeys = ['decal_pebble_0', 'decal_pebble_1'];
@@ -72,12 +99,17 @@ function scatterDecals(rng: () => number, map: TileMap): MapDecal[] {
       const t = map.get(x, y);
       if (t === TileType.Water || t === TileType.Stone || t === TileType.Forest) continue;
       const roll = rng();
+      const flowerChance = 0.04 * density;
+      const tuftChance = 0.07 * density;
+      const pebbleChance = 0.085 * density;
+      const mushroomChance = 0.09 * density;
+      const twigChance = 0.095 * density;
       let key: string | null = null;
-      if (roll < 0.04) key = flowerKeys[Math.floor(rng() * flowerKeys.length)];
-      else if (roll < 0.07) key = tuftKeys[Math.floor(rng() * tuftKeys.length)];
-      else if (roll < 0.085) key = pebbleKeys[Math.floor(rng() * pebbleKeys.length)];
-      else if (roll < 0.09 && t === TileType.Grass) key = mushroomKeys[Math.floor(rng() * mushroomKeys.length)];
-      else if (roll < 0.095) key = 'decal_twig';
+      if (roll < flowerChance) key = flowerKeys[Math.floor(rng() * flowerKeys.length)];
+      else if (roll < tuftChance) key = tuftKeys[Math.floor(rng() * tuftKeys.length)];
+      else if (roll < pebbleChance) key = pebbleKeys[Math.floor(rng() * pebbleKeys.length)];
+      else if (roll < mushroomChance && t === TileType.Grass) key = mushroomKeys[Math.floor(rng() * mushroomKeys.length)];
+      else if (roll < twigChance) key = 'decal_twig';
       if (!key) continue;
       decals.push({
         x: x * TILE + 4 + rng() * (TILE - 8),
@@ -91,34 +123,37 @@ function scatterDecals(rng: () => number, map: TileMap): MapDecal[] {
   return decals;
 }
 
-function addDecorativeWater(rng: () => number, map: TileMap): void {
-  const mirroredPond = (p: { tx: number; ty: number; r: number }): { tx: number; ty: number; r: number } => {
+function addDecorativeWater(rng: () => number, map: TileMap, profile: MapProfile): void {
+  const mirroredPond = (p: { tx: number; ty: number; rx: number; ry: number }): { tx: number; ty: number; rx: number; ry: number } => {
     const m = mirror(p);
-    return { tx: m.tx, ty: m.ty, r: p.r };
+    return { tx: m.tx, ty: m.ty, rx: p.rx, ry: p.ry };
   };
-  const first = { tx: 18, ty: 45, r: 3 + Math.floor(rng() * 2) };
-  const second = { tx: 30, ty: 14, r: 2 };
-  const ponds = [
-    first,
-    mirroredPond(first),
-    second,
-    mirroredPond(second)
-  ];
-  for (const p of ponds) {
-    for (let dy = -p.r; dy <= p.r; dy++) {
-      for (let dx = -p.r; dx <= p.r; dx++) {
-        const x = p.tx + dx, y = p.ty + dy;
-        if (!map.inBounds(x, y)) continue;
-        if (Math.hypot(dx, dy) <= p.r && rng() < 0.8) map.set(x, y, TileType.Water);
-      }
+  const anchors = [
+    { tx: 17 + Math.floor(rng() * 5), ty: 42 + Math.floor(rng() * 7), rx: 3 + Math.floor(rng() * 3), ry: 2 + Math.floor(rng() * 3) },
+    { tx: 26 + Math.floor(rng() * 7), ty: 12 + Math.floor(rng() * 6), rx: 2 + Math.floor(rng() * 3), ry: 2 + Math.floor(rng() * 2) },
+    { tx: 10 + Math.floor(rng() * 10), ty: 25 + Math.floor(rng() * 10), rx: 2 + Math.floor(rng() * 2), ry: 3 + Math.floor(rng() * 3) }
+  ].slice(0, profile.pondPairs);
+  for (const p of anchors.flatMap((p) => [p, mirroredPond(p)])) {
+    paintPond(rng, map, p.tx, p.ty, p.rx, p.ry);
+  }
+}
+
+function paintPond(rng: () => number, map: TileMap, cx: number, cy: number, rx: number, ry: number): void {
+  for (let dy = -ry; dy <= ry; dy++) {
+    for (let dx = -rx; dx <= rx; dx++) {
+      const x = cx + dx, y = cy + dy;
+      if (!map.inBounds(x, y)) continue;
+      const norm = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+      if (norm <= 1 && rng() < 0.9 - norm * 0.18) map.set(x, y, TileType.Water);
     }
   }
 }
 
-function clusterForestMirrored(rng: () => number, count: number, radius: number, map: TileMap): void {
+function clusterForestMirrored(rng: () => number, count: number, minRadius: number, maxRadius: number, map: TileMap): void {
   for (let i = 0; i < count; i++) {
     const cx = 5 + Math.floor(rng() * (MAP_W / 2 - 10));
     const cy = 5 + Math.floor(rng() * (MAP_H - 10));
+    const radius = minRadius + Math.floor(rng() * (maxRadius - minRadius + 1));
     paintForestCluster(rng, map, cx, cy, radius);
     const m = mirror({ tx: cx, ty: cy });
     paintForestCluster(rng, map, m.tx, m.ty, radius);
@@ -190,7 +225,7 @@ function materializeTrees(
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
       if (map.get(x, y) !== TileType.Forest) continue;
-      if (!isFar(x, y, playerBase, 8) || !isFar(x, y, aiBase, 8) || goldMines.some(m => !isFar(x, y, m, 5))) {
+      if (!isFar(x, y, playerBase, 9) || !isFar(x, y, aiBase, 9) || goldMines.some(m => !isFar(x, y, m, 6))) {
         map.set(x, y, TileType.Grass);
         map.setWalkable(x, y, true);
         continue;

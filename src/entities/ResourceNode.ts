@@ -4,6 +4,9 @@ import { Side, SIDE, RESOURCE, TILE } from '../config';
 
 export type ResourceType = 'gold' | 'lumber';
 
+const TREE_DISPLAY_SIZE = TILE * 1.5;
+const TREE_LOG_SCALE = 1.22;
+
 export class ResourceNode implements IEntity {
   readonly id = newEntityId();
   readonly kind = 'resource' as const;
@@ -48,6 +51,7 @@ export class ResourceNode implements IEntity {
       this.radius = TILE * 0.45;
       // Origin at bottom so sway rotates the crown, not the base
       this.sprite.setOrigin(0.5, 0.9);
+      this.sprite.setDisplaySize(TREE_DISPLAY_SIZE, TREE_DISPLAY_SIZE);
       // Gentle sway tween
       scene.tweens.add({
         targets: this.sprite,
@@ -63,11 +67,12 @@ export class ResourceNode implements IEntity {
     this.sprite.setData('entity', this);
     this.maxHp = this.amount;
     this.hp = this.amount;
-    this.hb = new HealthBar(scene, this, type === 'gold' ? 60 : 24);
+    this.hb = new HealthBar(scene, this, type === 'gold' ? 64 : 30);
   }
 
   get x(): number { return this.sprite.x; }
   get y(): number { return this.sprite.y; }
+  get visualRadius(): number { return Math.max(this.sprite.displayWidth, this.sprite.displayHeight) / 2; }
 
   harvest(n: number): number {
     const got = Math.min(n, this.amount);
@@ -105,7 +110,8 @@ export class ResourceNode implements IEntity {
 
   private addTreeLogDecal(scene: Phaser.Scene): Phaser.GameObjects.Image | null {
     if (!scene.textures.exists('tree_log')) return null;
-    const decal = scene.add.image(this.sprite.x + TILE * 0.18, this.sprite.y + TILE * 0.2, 'tree_log');
+    const decal = scene.add.image(this.sprite.x + TILE * 0.22, this.sprite.y + TILE * 0.3, 'tree_log')
+      .setScale(TREE_LOG_SCALE);
     decal.setDepth(this.sprite.depth + 0.01);
     decal.setRotation(-0.12);
     decal.setData('entity', null);
@@ -128,6 +134,7 @@ export class ResourceNode implements IEntity {
     if (this.resourceType === 'lumber' && scene.textures.exists('tree_stump')) {
       this.sprite.setTexture('tree_stump');
       this.sprite.setOrigin(0.5, 0.8);
+      this.sprite.setDisplaySize(TREE_DISPLAY_SIZE, TREE_DISPLAY_SIZE);
       this.sprite.setRotation(0);
       this.sprite.setAlpha(1);
       this.sprite.setData('entity', null);

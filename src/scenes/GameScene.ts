@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import {
   TILE, WORLD_W, WORLD_H, VIEW_W, VIEW_H,
-  CAMERA_SPEED, EDGE_SCROLL_PX,
+  CAMERA_SPEED, CAMERA_ZOOM, EDGE_SCROLL_PX,
   Side, SIDE, Race, Difficulty, GameMode, StoryMapId, GameLaunchConfig, DIFFICULTY, COLORS, RACE_COLOR,
   UNIT, BUILDING, UnitKind, BuildingKind,
   RESOURCE, CARAVAN_CONFIG, FOG, FEEL, VISUALS, SKIRMISH_CONFIG
@@ -25,6 +25,7 @@ import { SpatialIndex } from '../systems/SpatialIndex';
 import { nearestReachableWalkable } from '../world/MapValidation';
 import {
   BUILDING_ART_DISPLAY,
+  artAssetUrl,
   buildingArtReady,
   buildingSheetKey,
   getBuildingStageFrame
@@ -73,6 +74,13 @@ const GROUP_SLOT_ARRIVAL_RADIUS = 12;
 const GROUP_SLOT_SETTLE_RADIUS = 34;
 const GROUP_SLOT_AVOID_FADE_RADIUS = TILE * 3;
 const PERF_UNIT_MIX: UnitKind[] = ['worker', 'footman', 'archer', 'knight', 'catapult', 'footman', 'archer', 'knight'];
+const CURSOR_HOTSPOTS: Record<string, { x: number; y: number }> = {
+  cursor_default: { x: 2, y: 2 },
+  cursor_attack: { x: 16, y: 16 },
+  cursor_build_ok: { x: 18, y: 18 },
+  cursor_build_no: { x: 18, y: 18 },
+  cursor_gather: { x: 18, y: 18 }
+};
 
 function freshSkirmishStats(): SkirmishStats {
   return {
@@ -139,8 +147,9 @@ export class GameScene extends Phaser.Scene {
   private cursorKeys!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: { W: Phaser.Input.Keyboard.Key, A: Phaser.Input.Keyboard.Key, S: Phaser.Input.Keyboard.Key, D: Phaser.Input.Keyboard.Key };
   private gameOver = false;
-  private cursorSprite!: Phaser.GameObjects.Image;
+  private cursorEl: HTMLImageElement | null = null;
   private lastCursorKey = 'cursor_default';
+  private lastCursorClient = { x: -1000, y: -1000 };
   private lastCursorCheckMs = 0;
   private lastHoverCheckMs = 0;
   private hoveredEntity: IEntity | null = null;
@@ -175,7 +184,9 @@ export class GameScene extends Phaser.Scene {
   private onUiStop = (): void => this.commandStop();
   private onUiAutopilot = (): void => this.toggleAutopilotForSelection();
   private onUiCenterTownhall = (): void => this.centerOnTownhall();
-  private onUiMinimapClick = (wx: number, wy: number): void => { this.cameras.main.centerOn(wx, wy); };
+  private onUiMinimapClick = (wx: number, wy: number): void => { this.centerCameraOn(wx, wy); };
+  private onWindowPointerMove = (ev: PointerEvent): void => this.updateDomCursorFromClient(ev.clientX, ev.clientY);
+  private onWindowBlur = (): void => this.setDomCursorVisible(false);
 
   constructor() { super('GameScene'); }
 
@@ -264,6 +275,7 @@ export class GameScene extends Phaser.Scene {
     this.map = this.layout.map;
 
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+    this.cameras.main.setZoom(CAMERA_ZOOM);
     this.cameras.main.setBackgroundColor('#2a4a22');
     this.effects.setupPostFX();
     this.effects.setupVignette();
@@ -277,7 +289,10 @@ export class GameScene extends Phaser.Scene {
     this.drawTiles();
     if (this.debugPathfinding) this.spawnDebugPathfindingScenario();
     else if (this.debugPerf) this.spawnDebugPerfScenario(this.debugPerfSize);
-    else this.spawnInitial();
+    else {
+      this.spawnInitial();
+      this.centerOnTownhall();
+    }
     this.debugCaravans = this.isDebugCaravansEnabled();
     this.scheduleNextCaravan(true);
 
@@ -290,12 +305,9 @@ export class GameScene extends Phaser.Scene {
     this.footprint = this.add.graphics().setDepth(510);
     this.rallyGraphics = this.add.graphics().setDepth(75);
 
-    // Custom cursor sprite (hides native)
+    // DOM cursor: fixed to client coordinates, so camera zoom and canvas scaling cannot offset it.
     this.input.setDefaultCursor('none');
-    this.cursorSprite = this.add.image(VIEW_W / 2, VIEW_H / 2, 'cursor_default')
-      .setOrigin(0, 0)
-      .setScrollFactor(0)
-      .setDepth(2000);
+    this.setupDomCursor();
     if (this.debugPathfinding) this.createDebugPathfindingOverlay();
     if (this.debugPerf) this.createDebugPerfOverlay();
 
@@ -322,6 +334,7 @@ export class GameScene extends Phaser.Scene {
       this.game.events.off('ui-autopilot', this.onUiAutopilot);
       this.game.events.off('ui-center-townhall', this.onUiCenterTownhall);
       this.game.events.off('ui-minimap-click', this.onUiMinimapClick);
+      this.teardownDomCursor();
       this.cancelPlacement();
     });
   }
@@ -726,8 +739,9 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (this.panStart) {
-        this.cameras.main.scrollX = this.panStart.sx + (this.panStart.x - p.x);
-        this.cameras.main.scrollY = this.panStart.sy + (this.panStart.y - p.y);
+        const zoom = this.cameras.main.zoom || 1;
+        this.cameras.main.scrollX = this.panStart.sx + (this.panStart.x - p.x) / zoom;
+        this.cameras.main.scrollY = this.panStart.sy + (this.panStart.y - p.y) / zoom;
       }
       if (this.placementKind && this.placementGhost) this.updatePlacementGhost(p.worldX, p.worldY);
       if (this.dragStart && p.leftButtonDown()) this.drawSelectionDrag(p);
@@ -739,8 +753,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCursor(p: Phaser.Input.Pointer): void {
-    // Position always (cheap)
-    this.cursorSprite.setPosition(p.x - 2, p.y - 2);
+    const screen = this.pointerClientPosition(p);
+    const overUi = this.isClientOverUi(screen.x, screen.y);
+    this.updateDomCursorFromClient(screen.x, screen.y);
+    if (overUi) return;
 
     // Throttle expensive hit-test to ~90ms
     const now = this.time.now;
@@ -766,14 +782,15 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (key !== this.lastCursorKey) {
-      this.cursorSprite.setTexture(key);
-      this.lastCursorKey = key;
-    }
+    this.setDomCursorKey(key);
   }
 
   private isOverUi(p: Phaser.Input.Pointer): boolean {
     const { x, y } = this.pointerClientPosition(p);
+    return this.isClientOverUi(x, y);
+  }
+
+  private isClientOverUi(x: number, y: number): boolean {
     const el = document.elementFromPoint(x, y);
     return !!el?.closest('#top-bar, #bottom-panel, #minimap-border, #game-over-screen.visible, #menu-layer.visible');
   }
@@ -788,6 +805,61 @@ export class GameScene extends Phaser.Scene {
       x: rect.left + (p.x / VIEW_W) * rect.width,
       y: rect.top + (p.y / VIEW_H) * rect.height
     };
+  }
+
+  private setupDomCursor(): void {
+    this.cursorEl = document.getElementById('game-cursor') as HTMLImageElement | null;
+    if (!this.cursorEl) {
+      this.cursorEl = document.createElement('img');
+      this.cursorEl.id = 'game-cursor';
+      this.cursorEl.alt = '';
+      this.cursorEl.draggable = false;
+      document.body.appendChild(this.cursorEl);
+    }
+    this.lastCursorKey = 'cursor_default';
+    this.cursorEl.src = this.cursorUrl(this.lastCursorKey);
+    this.cursorEl.classList.add('hidden');
+    document.body.classList.add('game-cursor-active');
+    window.addEventListener('pointermove', this.onWindowPointerMove, { passive: true });
+    window.addEventListener('blur', this.onWindowBlur);
+  }
+
+  private teardownDomCursor(): void {
+    window.removeEventListener('pointermove', this.onWindowPointerMove);
+    window.removeEventListener('blur', this.onWindowBlur);
+    document.body.classList.remove('game-cursor-active');
+    this.cursorEl?.remove();
+    this.cursorEl = null;
+  }
+
+  private updateDomCursorFromClient(x: number, y: number): void {
+    this.lastCursorClient = { x, y };
+    this.setDomCursorVisible(true);
+    if (this.isClientOverUi(x, y)) this.setDomCursorKey('cursor_default');
+    this.positionDomCursor();
+  }
+
+  private setDomCursorKey(key: string): void {
+    if (!this.cursorEl || key === this.lastCursorKey) return;
+    this.lastCursorKey = key;
+    this.cursorEl.src = this.cursorUrl(key);
+    this.positionDomCursor();
+  }
+
+  private setDomCursorVisible(visible: boolean): void {
+    this.cursorEl?.classList.toggle('hidden', !visible);
+  }
+
+  private positionDomCursor(): void {
+    if (!this.cursorEl) return;
+    const hot = CURSOR_HOTSPOTS[this.lastCursorKey] ?? CURSOR_HOTSPOTS.cursor_default;
+    const x = Math.round(this.lastCursorClient.x - hot.x);
+    const y = Math.round(this.lastCursorClient.y - hot.y);
+    this.cursorEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+  }
+
+  private cursorUrl(key: string): string {
+    return artAssetUrl(`assets/art/ui/${key}.png`);
   }
 
   private updateEntityHover(p: Phaser.Input.Pointer): void {
@@ -860,7 +932,13 @@ export class GameScene extends Phaser.Scene {
     for (const u of picked) if (!this.selected.includes(u)) this.selected.push(u);
     this.selectedBuilding = null;
     if (this.selected.length === 0) {
-      const building = this.buildings.find(bld => bld.alive && bld.side === SIDE.player && Math.abs(bld.x - (x1 + x2) / 2) < bld.radius && Math.abs(bld.y - (y1 + y2) / 2) < bld.radius);
+      const building = this.buildings.find((bld) => {
+        const radius = bld.visualRadius ?? bld.radius;
+        return bld.alive
+          && bld.side === SIDE.player
+          && Math.abs(bld.x - (x1 + x2) / 2) < radius
+          && Math.abs(bld.y - (y1 + y2) / 2) < radius;
+      });
       if (building) this.selectedBuilding = building;
     }
     this.updateSelectionRings();
@@ -909,10 +987,12 @@ export class GameScene extends Phaser.Scene {
       if (c.alive && c.sprite.visible && Phaser.Math.Distance.Between(x, y, c.x, c.y) <= c.radius + 6) return c;
     }
     for (const b of this.buildings) {
-      if (b.alive && b.sprite.visible && Math.abs(x - b.x) <= b.radius && Math.abs(y - b.y) <= b.radius) return b;
+      const radius = b.visualRadius ?? b.radius;
+      if (b.alive && b.sprite.visible && Math.abs(x - b.x) <= radius && Math.abs(y - b.y) <= radius) return b;
     }
     for (const r of this.resources) {
-      if (r.alive && r.sprite.visible && Math.abs(x - r.x) <= r.radius && Math.abs(y - r.y) <= r.radius) return r;
+      const radius = r.visualRadius ?? r.radius;
+      if (r.alive && r.sprite.visible && Math.abs(x - r.x) <= radius && Math.abs(y - r.y) <= radius) return r;
     }
     return null;
   }
@@ -963,7 +1043,8 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedBuilding) {
       const b = this.selectedBuilding;
       const ring = this.add.sprite(b.x, b.y, 'ring48').setDepth(29);
-      ring.setDisplaySize(b.radius * 2 + 10, b.radius * 2 + 10);
+      const radius = b.visualRadius ?? b.radius;
+      ring.setDisplaySize(radius * 2 + 10, radius * 2 + 10);
       this.tweens.add({
         targets: ring,
         alpha: { from: 0.7, to: 1 },
@@ -1087,7 +1168,18 @@ export class GameScene extends Phaser.Scene {
 
   private centerOnTownhall(): void {
     const th = this.buildings.find(b => b.alive && b.side === SIDE.player && b.buildingKind === 'townhall');
-    if (th) this.cameras.main.centerOn(th.x, th.y);
+    if (th) this.centerCameraOn(th.x, th.y);
+  }
+
+  private centerCameraOn(x: number, y: number): void {
+    const cam = this.cameras.main;
+    const zoom = cam.zoom || 1;
+    const viewW = cam.width / zoom;
+    const viewH = cam.height / zoom;
+    cam.setScroll(
+      Phaser.Math.Clamp(x - viewW / 2, 0, Math.max(0, WORLD_W - viewW)),
+      Phaser.Math.Clamp(y - viewH / 2, 0, Math.max(0, WORLD_H - viewH))
+    );
   }
 
   private restartGame(): void {
@@ -1661,7 +1753,8 @@ export class GameScene extends Phaser.Scene {
 
   private updateCamera(dt: number): void {
     const cam = this.cameras.main;
-    const speed = (CAMERA_SPEED * dt) / 1000;
+    const zoom = cam.zoom || 1;
+    const speed = (CAMERA_SPEED * dt) / 1000 / zoom;
     let dx = 0, dy = 0;
     if (this.cursorKeys.up?.isDown || this.wasdKeys.W.isDown) dy -= 1;
     if (this.cursorKeys.down?.isDown || this.wasdKeys.S.isDown) dy += 1;
@@ -1682,8 +1775,10 @@ export class GameScene extends Phaser.Scene {
     this.cameraVel.y = Phaser.Math.Linear(this.cameraVel.y * FEEL.cameraFriction, targetY, FEEL.cameraSmoothing);
     if (Math.abs(this.cameraVel.x) < 0.01) this.cameraVel.x = 0;
     if (Math.abs(this.cameraVel.y) < 0.01) this.cameraVel.y = 0;
-    cam.scrollX = Phaser.Math.Clamp(cam.scrollX + this.cameraVel.x, 0, WORLD_W - cam.width);
-    cam.scrollY = Phaser.Math.Clamp(cam.scrollY + this.cameraVel.y, 0, WORLD_H - cam.height);
+    const viewW = cam.width / zoom;
+    const viewH = cam.height / zoom;
+    cam.scrollX = Phaser.Math.Clamp(cam.scrollX + this.cameraVel.x, 0, Math.max(0, WORLD_W - viewW));
+    cam.scrollY = Phaser.Math.Clamp(cam.scrollY + this.cameraVel.y, 0, Math.max(0, WORLD_H - viewH));
   }
 
   private updateUnits(dt: number): void {
